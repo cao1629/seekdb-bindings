@@ -44,16 +44,8 @@ typedef struct {
 typedef struct {
     int              column_count;
     MYSQL_RES       *mysql_res;
+    MYSQL_ROW        current_row;       /* set by seekdb_result_next */
+    unsigned long   *current_lengths;   /* pointer into MYSQL_RES storage,
+                                          overwritten on next fetch */
 } SeekdbResultImpl;
-
-/* A single row fetched from a SeekdbResult.
- * `row` points into the parent MYSQL_RES storage (valid for the lifetime
- * of the result, since we use mysql_store_result). `lengths` is a snapshot
- * — libmariadb's mysql_fetch_lengths returns a pointer that is overwritten
- * on the next mysql_fetch_row call, so we copy. */
-typedef struct {
-    SeekdbResultImpl *result;
-    MYSQL_ROW         row;
-    unsigned long    *lengths;
-} SeekdbRowImpl;
 

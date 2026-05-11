@@ -318,12 +318,10 @@ TEST_F(TwoClientsOpen, ClientBSeesClientAWrite)
             SeekdbResult r = nullptr;
             b_query_rc = seekdb_query(c, "SELECT * FROM test.t1", 21, &r);
             if (b_query_rc == SEEKDB_SUCCESS) {
-                SeekdbRow row = nullptr;
-                if (seekdb_fetch_row(r, &row) != SEEKDB_SUCCESS)
+                if (seekdb_result_next(r) != SEEKDB_SUCCESS)
                     b_query_rc = SEEKDB_INTERNAL_ERROR;
-                else if (seekdb_row_get_int64(row, 0, &b_seen_value) != SEEKDB_SUCCESS)
+                else if (seekdb_result_get_int64(r, 0, &b_seen_value) != SEEKDB_SUCCESS)
                     b_query_rc = SEEKDB_INTERNAL_ERROR;
-                if (row) seekdb_row_free(row);
             }
             if (r) seekdb_result_free(r);
             seekdb_disconnect(c);

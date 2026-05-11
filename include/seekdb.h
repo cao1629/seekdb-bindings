@@ -11,7 +11,6 @@ extern "C" {
 typedef void *SeekdbHandle;        // a seekdb instance
 typedef void *SeekdbConnection;
 typedef void *SeekdbResult;
-typedef void *SeekdbRow;           // a single fetched row
 typedef void *SeekdbType;
 typedef void *SeekdbValue;
 // typedef void *SeekdbConfig;
@@ -54,14 +53,20 @@ int seekdb_result_column_name(SeekdbResult result, int64_t index,
 int seekdb_result_column_type_id(SeekdbResult result, int64_t index,
                                  SeekdbTypeId *out_typeid);
 int seekdb_result_row_count(SeekdbResult result, int64_t *out_nrows);
-int seekdb_fetch_row(SeekdbResult result, SeekdbRow *out_row);
-int seekdb_row_free(SeekdbRow row);
-int seekdb_row_get_value(SeekdbRow row, int64_t index,
-                         SeekdbValue *out_value);
-int seekdb_row_get_int64(SeekdbRow row, int64_t index,
-                         int64_t *out_value);
-int seekdb_row_get_float(SeekdbRow row, int64_t index,
-                         double *out_value);
+int seekdb_result_next(SeekdbResult result);
+int seekdb_result_get_int64(SeekdbResult result, int64_t index,
+                            int64_t *out_value);
+int seekdb_result_get_uint64(SeekdbResult result, int64_t index,
+                             uint64_t *out_value);
+int seekdb_result_get_float(SeekdbResult result, int64_t index,
+                            double *out_value);
+/* Returns a borrowed pointer into the current row's cell bytes; valid
+ * until the next seekdb_result_next or seekdb_result_free. Used for
+ * VARCHAR/DECIMAL/DATE/DATETIME/TIMESTAMP and any text-protocol cell.
+ * *out_is_null is set to 1 if the cell is NULL (out_data undefined). */
+int seekdb_result_get_str(SeekdbResult result, int64_t index,
+                          const char **out_data, size_t *out_len,
+                          int *out_is_null);
 
 int seekdb_trx_begin(SeekdbConnection connection);
 int seekdb_trx_commit(SeekdbConnection connection);

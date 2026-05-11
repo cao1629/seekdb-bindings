@@ -78,21 +78,19 @@ static void print_result(SeekdbResult result)
     int row_cap = 64, nrows = 0;
     char ***rows = malloc((size_t)row_cap * sizeof(char **));
 
-    SeekdbRow row_handle = NULL;
-    while (seekdb_fetch_row(result, &row_handle) == SEEKDB_SUCCESS) {
+    while (seekdb_result_next(result) == SEEKDB_SUCCESS) {
         if (nrows == row_cap) {
             row_cap *= 2;
             rows = realloc(rows, (size_t)row_cap * sizeof(char **));
         }
-        SeekdbRowImpl *rh = (SeekdbRowImpl *)row_handle;
         char **row = malloc((size_t)ncols * sizeof(char *));
         for (int i = 0; i < ncols; i++) {
-            const char *data = rh->row[i];
+            const char *data = r->current_row[i];
             if (!data) {
                 row[i] = strdup("NULL");
                 if (4 > widths[i]) widths[i] = 4;
             } else {
-                size_t len = rh->lengths[i];
+                size_t len = r->current_lengths[i];
                 row[i] = malloc(len + 1);
                 memcpy(row[i], data, len);
                 row[i][len] = '\0';
@@ -100,8 +98,6 @@ static void print_result(SeekdbResult result)
             }
         }
         rows[nrows++] = row;
-        seekdb_row_free(row_handle);
-        row_handle = NULL;
     }
 
     /* Print table. */

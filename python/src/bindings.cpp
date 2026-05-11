@@ -17,6 +17,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <cstdio>
 #include <cstdlib>
 #include <memory>
 #include <stdexcept>
@@ -28,6 +29,22 @@ extern "C" {
 }
 
 namespace py = pybind11;
+
+// Python class handles, cached on first use. Match ob_embed_impl.cpp's
+// type mapping: DATE → datetime.date, DATETIME/TIMESTAMP → datetime.datetime,
+// DECIMAL → decimal.Decimal.
+static py::object &date_class() {
+    static py::object o = py::module_::import("datetime").attr("date");
+    return o;
+}
+static py::object &datetime_class() {
+    static py::object o = py::module_::import("datetime").attr("datetime");
+    return o;
+}
+static py::object &decimal_class() {
+    static py::object o = py::module_::import("decimal").attr("Decimal");
+    return o;
+}
 
 // ---------- error translation ----------
 
@@ -106,21 +123,15 @@ public:
 
     py::object fetchone() {
         if (!result_) return py::none();
-        SeekdbRow row = nullptr;
-        if (seekdb_fetch_row(result_, &row) != SEEKDB_SUCCESS) return py::none();
-        py::tuple t = build_row(row);
-        seekdb_row_free(row);
-        return t;
+        if (seekdb_result_next(result_) != SEEKDB_SUCCESS) return py::none();
+        return build_row();
     }
 
     std::vector<py::tuple> fetchall() {
         std::vector<py::tuple> rows;
         if (!result_) return rows;
-        SeekdbRow row = nullptr;
-        while (seekdb_fetch_row(result_, &row) == SEEKDB_SUCCESS) {
-            rows.push_back(build_row(row));
-            seekdb_row_free(row);
-            row = nullptr;
+        while (seekdb_result_next(result_) == SEEKDB_SUCCESS) {
+            rows.push_back(build_row());
         }
         return rows;
     }
@@ -132,34 +143,69 @@ private:
         if (result_) { seekdb_result_free(result_); result_ = nullptr; }
     }
 
-    py::tuple build_row(SeekdbRow row) {
+    py::tuple build_row() {
         int64_t ncol = 0;
         SDB_CHECK(seekdb_result_column_count(result_, &ncol));
         py::tuple t(ncol);
         for (int64_t i = 0; i < ncol; ++i) {
-            t[i] = get_value(row, i);
+            t[i] = get_value(i);
         }
         return t;
     }
 
-    py::object get_value(SeekdbRow row, int64_t idx) {
+    py::object get_value(int64_t idx) {
         SeekdbTypeId t = SEEKDB_TYPE_NULL;
         SDB_CHECK(seekdb_result_column_type_id(result_, idx, &t));
+
+        // Probe the raw cell first so SQL NULL maps to py::none() regardless
+        // of column type — the typed getters return 0/0.0 for NULL silently.
+        const char *data = nullptr; size_t len = 0; int is_null = 0;
+        SDB_CHECK(seekdb_result_get_str(result_, idx, &data, &len, &is_null));
+        if (is_null) return py::none();
+
         switch (t) {
+            case SEEKDB_TYPE_NULL:
+                return py::none();
             case SEEKDB_TYPE_INT64: {
                 int64_t v = 0;
-                SDB_CHECK(seekdb_row_get_int64(row, idx, &v));
+                SDB_CHECK(seekdb_result_get_int64(result_, idx, &v));
+                return py::int_(v);
+            }
+            case SEEKDB_TYPE_UINT64: {
+                uint64_t v = 0;
+                SDB_CHECK(seekdb_result_get_uint64(result_, idx, &v));
                 return py::int_(v);
             }
             case SEEKDB_TYPE_FLOAT: {
                 double v = 0.0;
-                SDB_CHECK(seekdb_row_get_float(row, idx, &v));
+                SDB_CHECK(seekdb_result_get_float(result_, idx, &v));
                 return py::float_(v);
             }
+            case SEEKDB_TYPE_DECIMAL:
+                return decimal_class()(py::str(data, len));
+            case SEEKDB_TYPE_DATE: {
+                int y = 0, m = 0, d = 0;
+                if (std::sscanf(std::string(data, len).c_str(),
+                                "%d-%d-%d", &y, &m, &d) != 3) {
+                    return py::str(data, len);
+                }
+                return date_class()(y, m, d);
+            }
+            case SEEKDB_TYPE_DATETIME:
+            case SEEKDB_TYPE_TIMESTAMP: {
+                int y = 0, mo = 0, d = 0, h = 0, mi = 0, s = 0, us = 0;
+                int n = std::sscanf(std::string(data, len).c_str(),
+                                    "%d-%d-%d %d:%d:%d.%d",
+                                    &y, &mo, &d, &h, &mi, &s, &us);
+                if (n < 6) return py::str(data, len);
+                return datetime_class()(y, mo, d, h, mi, s, us);
+            }
+            case SEEKDB_TYPE_VARCHAR:
+                return py::str(data, len);
             default:
                 throw std::runtime_error(
-                    "Cursor.get_value: column type not yet supported (id=" +
-                    std::to_string(static_cast<int>(t)) + ")");
+                    "Cursor.get_value: unknown column type id=" +
+                    std::to_string(static_cast<int>(t)));
         }
     }
 

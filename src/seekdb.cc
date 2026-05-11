@@ -120,9 +120,9 @@ static int try_connect(SeekdbHandleImpl *h)
     MYSQL *m = mysql_init(NULL);
     if (!m) return 0;
 
-    char no_ssl = 0;
-    mysql_options(m, MYSQL_OPT_SSL_ENFORCE,            &no_ssl);
-    mysql_options(m, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &no_ssl);
+    // char no_ssl = 0;
+    // mysql_options(m, MYSQL_OPT_SSL_ENFORCE,            &no_ssl);
+    // mysql_options(m, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &no_ssl);
 
     const bool use_tcp = h->port != 0;
 #ifdef _WIN32
@@ -482,15 +482,16 @@ int seekdb_trx_rollback(SeekdbConnection connection)
 
 /* ============================================================ query ===== */
 
-static SeekdbTypeId map_field_type(enum enum_field_types t)
+static SeekdbTypeId map_field_type(const MYSQL_FIELD *f)
 {
-    switch (t) {
+    const bool is_unsigned = (f->flags & UNSIGNED_FLAG) != 0;
+    switch (f->type) {
         case MYSQL_TYPE_TINY:
         case MYSQL_TYPE_SHORT:
         case MYSQL_TYPE_LONG:
         case MYSQL_TYPE_LONGLONG:
         case MYSQL_TYPE_INT24:
-        case MYSQL_TYPE_YEAR:        return SEEKDB_TYPE_INT64;
+        case MYSQL_TYPE_YEAR:        return is_unsigned ? SEEKDB_TYPE_UINT64 : SEEKDB_TYPE_INT64;
         case MYSQL_TYPE_FLOAT:
         case MYSQL_TYPE_DOUBLE:      return SEEKDB_TYPE_FLOAT;
         case MYSQL_TYPE_DECIMAL:
@@ -575,7 +576,7 @@ int seekdb_result_column_type_id(SeekdbResult result, int64_t index,
 
     MYSQL_FIELD *f = mysql_fetch_field_direct(r->mysql_res, (unsigned int)index);
     if (!f) return SEEKDB_INTERNAL_ERROR;
-    *out_typeid = map_field_type(f->type);
+    *out_typeid = map_field_type(f);
     return SEEKDB_SUCCESS;
 }
 
@@ -587,48 +588,26 @@ int seekdb_result_row_count(SeekdbResult result, int64_t *out_nrows)
     return SEEKDB_SUCCESS;
 }
 
-int seekdb_fetch_row(SeekdbResult result, SeekdbRow *out_row)
+int seekdb_result_next(SeekdbResult result)
 {
-    if (!result || !out_row) return SEEKDB_INVALID_ARGUMENT;
-    *out_row = NULL;
+    if (!result) return SEEKDB_INVALID_ARGUMENT;
     SeekdbResultImpl *r = (SeekdbResultImpl *)result;
     if (!r->mysql_res) return SEEKDB_INTERNAL_ERROR;
-
-    MYSQL_ROW raw = mysql_fetch_row(r->mysql_res);
-    if (!raw) return SEEKDB_INTERNAL_ERROR;
-    unsigned long *lens = mysql_fetch_lengths(r->mysql_res);
-
-    SeekdbRowImpl *row = (SeekdbRowImpl *)calloc(1, sizeof(*row));
-    if (!row) return SEEKDB_INTERNAL_ERROR;
-    row->result  = r;
-    row->row     = raw;
-    row->lengths = (unsigned long *)malloc((size_t)r->column_count * sizeof(unsigned long));
-    if (!row->lengths) { free(row); return SEEKDB_INTERNAL_ERROR; }
-    memcpy(row->lengths, lens, (size_t)r->column_count * sizeof(unsigned long));
-
-    *out_row = (SeekdbRow)row;
-    return SEEKDB_SUCCESS;
+    r->current_row     = mysql_fetch_row(r->mysql_res);
+    r->current_lengths = r->current_row ? mysql_fetch_lengths(r->mysql_res) : NULL;
+    return r->current_row ? SEEKDB_SUCCESS : SEEKDB_INTERNAL_ERROR;
 }
 
-int seekdb_row_free(SeekdbRow row)
+int seekdb_result_get_int64(SeekdbResult result, int64_t index, int64_t *out_value)
 {
-    if (!row) return SEEKDB_INVALID_ARGUMENT;
-    SeekdbRowImpl *r = (SeekdbRowImpl *)row;
-    free(r->lengths);
-    free(r);
-    return SEEKDB_SUCCESS;
-}
+    if (!result || !out_value) return SEEKDB_INVALID_ARGUMENT;
+    SeekdbResultImpl *r = (SeekdbResultImpl *)result;
+    if (index < 0 || index >= r->column_count) return SEEKDB_INVALID_ARGUMENT;
+    if (!r->current_row) return SEEKDB_INTERNAL_ERROR;
 
-int seekdb_row_get_int64(SeekdbRow row, int64_t index, int64_t *out_value)
-{
-    if (!row || !out_value) return SEEKDB_INVALID_ARGUMENT;
-    SeekdbRowImpl *r = (SeekdbRowImpl *)row;
-    if (index < 0 || index >= r->result->column_count) return SEEKDB_INVALID_ARGUMENT;
-    if (!r->row) return SEEKDB_INTERNAL_ERROR;
-
-    const char *data = r->row[index];
+    const char *data = r->current_row[index];
     if (!data) { *out_value = 0; return SEEKDB_SUCCESS; }
-    size_t len = r->lengths[index];
+    size_t len = r->current_lengths[index];
 
     char buf[32];
     if (len >= sizeof(buf)) return SEEKDB_INTERNAL_ERROR;
@@ -642,16 +621,39 @@ int seekdb_row_get_int64(SeekdbRow row, int64_t index, int64_t *out_value)
     return SEEKDB_SUCCESS;
 }
 
-int seekdb_row_get_float(SeekdbRow row, int64_t index, double *out_value)
+int seekdb_result_get_uint64(SeekdbResult result, int64_t index, uint64_t *out_value)
 {
-    if (!row || !out_value) return SEEKDB_INVALID_ARGUMENT;
-    SeekdbRowImpl *r = (SeekdbRowImpl *)row;
-    if (index < 0 || index >= r->result->column_count) return SEEKDB_INVALID_ARGUMENT;
-    if (!r->row) return SEEKDB_INTERNAL_ERROR;
+    if (!result || !out_value) return SEEKDB_INVALID_ARGUMENT;
+    SeekdbResultImpl *r = (SeekdbResultImpl *)result;
+    if (index < 0 || index >= r->column_count) return SEEKDB_INVALID_ARGUMENT;
+    if (!r->current_row) return SEEKDB_INTERNAL_ERROR;
 
-    const char *data = r->row[index];
+    const char *data = r->current_row[index];
+    if (!data) { *out_value = 0; return SEEKDB_SUCCESS; }
+    size_t len = r->current_lengths[index];
+
+    char buf[32];
+    if (len >= sizeof(buf)) return SEEKDB_INTERNAL_ERROR;
+    memcpy(buf, data, len);
+    buf[len] = '\0';
+    errno = 0;
+    char *endp = NULL;
+    unsigned long long v = strtoull(buf, &endp, 10);
+    if (errno || endp == buf) return SEEKDB_INTERNAL_ERROR;
+    *out_value = (uint64_t)v;
+    return SEEKDB_SUCCESS;
+}
+
+int seekdb_result_get_float(SeekdbResult result, int64_t index, double *out_value)
+{
+    if (!result || !out_value) return SEEKDB_INVALID_ARGUMENT;
+    SeekdbResultImpl *r = (SeekdbResultImpl *)result;
+    if (index < 0 || index >= r->column_count) return SEEKDB_INVALID_ARGUMENT;
+    if (!r->current_row) return SEEKDB_INTERNAL_ERROR;
+
+    const char *data = r->current_row[index];
     if (!data) { *out_value = 0.0; return SEEKDB_SUCCESS; }
-    size_t len = r->lengths[index];
+    size_t len = r->current_lengths[index];
 
     char buf[64];
     if (len >= sizeof(buf)) return SEEKDB_INTERNAL_ERROR;
@@ -665,41 +667,18 @@ int seekdb_row_get_float(SeekdbRow row, int64_t index, double *out_value)
     return SEEKDB_SUCCESS;
 }
 
-int seekdb_row_get_value(SeekdbRow row, int64_t index, SeekdbValue *out_value)
+int seekdb_result_get_str(SeekdbResult result, int64_t index,
+                          const char **out_data, size_t *out_len, int *out_is_null)
 {
-    if (!row || !out_value) return SEEKDB_INVALID_ARGUMENT;
-    SeekdbRowImpl *r = (SeekdbRowImpl *)row;
-    SeekdbResultImpl *res = r->result;
-    if (index < 0 || index >= res->column_count) return SEEKDB_INVALID_ARGUMENT;
+    if (!result || !out_data || !out_len || !out_is_null) return SEEKDB_INVALID_ARGUMENT;
+    SeekdbResultImpl *r = (SeekdbResultImpl *)result;
+    if (index < 0 || index >= r->column_count) return SEEKDB_INVALID_ARGUMENT;
+    if (!r->current_row) return SEEKDB_INTERNAL_ERROR;
 
-    MYSQL_FIELD *f = mysql_fetch_field_direct(res->mysql_res, (unsigned int)index);
-    if (!f) return SEEKDB_INTERNAL_ERROR;
-    SeekdbTypeId tid = map_field_type(f->type);
-
-    SeekdbValueImpl *v = (SeekdbValueImpl *)calloc(1, sizeof(*v));
-    if (!v) return SEEKDB_INTERNAL_ERROR;
-    v->type = tid;
-
-    int rc = SEEKDB_SUCCESS;
-    if (tid == SEEKDB_TYPE_INT64) {
-        rc = seekdb_row_get_int64(row, index, &v->v.i64);
-    } else if (tid == SEEKDB_TYPE_FLOAT) {
-        rc = seekdb_row_get_float(row, index, &v->v.f64);
-    } else {
-        if (!r->row) { free(v); return SEEKDB_INTERNAL_ERROR; }
-        const char *data = r->row[index];
-        if (data) {
-            size_t len = r->lengths[index];
-            v->v.str.data = (char *)malloc(len + 1);
-            if (!v->v.str.data) { free(v); return SEEKDB_INTERNAL_ERROR; }
-            memcpy(v->v.str.data, data, len);
-            v->v.str.data[len] = '\0';
-            v->v.str.len = len;
-        }
-    }
-    if (rc != SEEKDB_SUCCESS) { free(v); return rc; }
-
-    *out_value = (SeekdbValue)v;
+    const char *cell = r->current_row[index];
+    *out_is_null = (cell == NULL);
+    *out_data    = cell;
+    *out_len     = cell ? r->current_lengths[index] : 0;
     return SEEKDB_SUCCESS;
 }
 
