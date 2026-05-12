@@ -1,7 +1,11 @@
 /*
  * seekdb CLI — interactive SQL client, similar to the mariadb/mysql client.
  *
- * Usage: seekdb_cli <seekdb_daemon_bin> <db_dir>
+ * Usage: seekdb_cli [db_dir]
+ *
+ * If db_dir is omitted, defaults to "./seekdb.db" in the current
+ * working directory. The seekdb server binary is auto-discovered next
+ * to libseekdb_client.so.
  */
 
 #include "seekdb_internal.h"
@@ -175,15 +179,10 @@ static int is_quit(const char *s)
 
 int main(int argc, char **argv)
 {
-    if (argc < 3) {
-        fprintf(stderr, "Usage: %s <seekdb_daemon_bin> <db_dir>\n", argv[0]);
-        return 1;
-    }
-    const char *bin_path = argv[1];
-    const char *db_dir   = argv[2];
+    const char *db_dir = (argc >= 2) ? argv[1] : "./seekdb.db";
 
     SeekdbHandle handle = NULL;
-    if (seekdb_open(bin_path, db_dir, 0, &handle) != SEEKDB_SUCCESS) {
+    if (seekdb_open(db_dir, 0, &handle) != SEEKDB_SUCCESS) {
         fprintf(stderr, "seekdb_open failed\n");
         return 1;
     }

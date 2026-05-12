@@ -33,14 +33,12 @@ namespace {
 
 class OneClientProcess : public ::testing::Test {
 protected:
-    std::string bin_path_;
     std::string db_dir_;
 
     void SetUp() override {
         const char *bin = std::getenv("SEEKDB_BIN");
         ASSERT_NE(bin, nullptr) << "set SEEKDB_BIN to the seekdb binary";
-        bin_path_ = bin;
-        ASSERT_TRUE(fs::exists(bin_path_));
+        ASSERT_TRUE(fs::exists(bin));
 
         db_dir_ = make_per_test_db_dir(SEEKDB_TEST_DATA_ROOT);
         fs::create_directories(db_dir_);
@@ -57,7 +55,7 @@ TEST_F(OneClientProcess, ClientClose)
     if (client_pid == 0) {
         close(ready[0]);
         SeekdbHandle h = nullptr;
-        seekdb_open(bin_path_.c_str(), db_dir_.c_str(), 2991, &h);
+        seekdb_open(db_dir_.c_str(), 2991, &h);
         int64_t spawned_pid = ((SeekdbHandleImpl *)h)->spawned_pid;
         write(ready[1], &spawned_pid, sizeof(spawned_pid));
         close(ready[1]);
@@ -87,7 +85,7 @@ TEST_F(OneClientProcess, ClientExit)
     if (client_pid == 0) {
         close(ready[0]);
         SeekdbHandle h = nullptr;
-        seekdb_open(bin_path_.c_str(), db_dir_.c_str(), 2991, &h);
+        seekdb_open(db_dir_.c_str(), 2991, &h);
         int64_t spawned_pid = ((SeekdbHandleImpl *)h)->spawned_pid;
         write(ready[1], &spawned_pid, sizeof(spawned_pid));
         close(ready[1]);
@@ -116,7 +114,7 @@ TEST_F(OneClientProcess, KillClient)
     if (client_pid == 0) {
         close(ready[0]);
         SeekdbHandle h = nullptr;
-        seekdb_open(bin_path_.c_str(), db_dir_.c_str(), 2991, &h);
+        seekdb_open(db_dir_.c_str(), 2991, &h);
         int64_t spawned_pid = ((SeekdbHandleImpl *)h)->spawned_pid;
         write(ready[1], &spawned_pid, sizeof(spawned_pid));
         close(ready[1]);

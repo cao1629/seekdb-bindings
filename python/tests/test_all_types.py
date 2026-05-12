@@ -1,15 +1,14 @@
-import os, sys
+import os, shutil, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 BUILD = os.path.join(os.path.dirname(HERE), "build")
 sys.path.insert(0, BUILD)
-import seekdb_pyclient as sc
+import pylibseekdb as seekdb
 
-if not os.environ.get("SEEKDB_BIN"):
-    sys.exit("Set SEEKDB_BIN=/path/to/seekdb-server-binary")
-db_dir = os.environ.get("SEEKDB_DB", "/tmp/seekdb_python_test_data")
-os.makedirs(db_dir, exist_ok=True)
-sc.open(db_dir=db_dir)
-conn = sc.connect(database="test", autocommit=True)
+db_dir = os.path.join(HERE, "seekdb.db")
+shutil.rmtree(db_dir, ignore_errors=True)
+os.makedirs(db_dir)
+seekdb.open(db_dir=db_dir)
+conn = seekdb.connect(database="test", autocommit=True)
 cur = conn.cursor()
 cur.execute("DROP TABLE IF EXISTS t")
 cur.execute("""CREATE TABLE t (

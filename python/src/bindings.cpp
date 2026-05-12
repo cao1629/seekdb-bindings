@@ -1,19 +1,3 @@
-// pybind11 bindings for seekdb-client.
-//
-// Surface intentionally mirrors seekdb's `ob_embed_impl.cpp` so user code
-// looks the same:
-//
-//     import seekdb_pyclient as sc
-//     sc.open(db_dir="./seekdb.db")
-//     conn = sc.connect(database="test", autocommit=False)
-//     cur = conn.cursor()
-//     cur.execute("SELECT 1")
-//     print(cur.fetchall())
-//
-// Difference from ob_embed_impl.cpp: that one binds the in-process
-// ObLiteEmbed/ObLiteEmbedConn/ObLiteEmbedCursor classes; this one binds the
-// out-of-process seekdb-client C API (libseekdb_client.so).
-
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -30,9 +14,6 @@ extern "C" {
 
 namespace py = pybind11;
 
-// Python class handles, cached on first use. Match ob_embed_impl.cpp's
-// type mapping: DATE → datetime.date, DATETIME/TIMESTAMP → datetime.datetime,
-// DECIMAL → decimal.Decimal.
 static py::object &date_class() {
     static py::object o = py::module_::import("datetime").attr("date");
     return o;
@@ -64,14 +45,10 @@ private:
         if (_rc != SEEKDB_SUCCESS) throw SeekdbError(_rc, #expr);    \
     } while (0)
 
-// ============================================================
-// namespace seekdb — mirrors oceanbase::embed in ob_embed_impl.cpp
-// ============================================================
+
 namespace seekdb {
 
-class Cursor;  // forward decl — Connection::cursor() returns one
-
-// ---------- Connection (mirrors ObLiteEmbedConn) ----------
+class Cursor;  
 
 class Connection : public std::enable_shared_from_this<Connection> {
 public:
@@ -94,8 +71,6 @@ public:
 private:
     SeekdbConnection c_;
 };
-
-// ---------- Cursor (mirrors ObLiteEmbedCursor) ----------
 
 class Cursor {
 public:
@@ -217,30 +192,12 @@ Cursor Connection::cursor() {
     return Cursor(shared_from_this());
 }
 
-// ---------- module singleton (mirrors ObLiteEmbed::open/connect/close) ----------
 
 static SeekdbHandle handle = nullptr;
 
-static const char *resolve_bin_path() {
-    // ob_embed has the engine in-process so its open() takes only db_dir.
-    // seekdb-client spawns the server, so it needs a server binary path.
-    // We pull it from SEEKDB_BIN to keep the Python open() signature matching.
-    const char *bin = std::getenv("SEEKDB_BIN");
-    if (!bin || !*bin) {
-        throw std::runtime_error(
-            "seekdb-client requires SEEKDB_BIN env var (path to seekdb server binary)");
-    }
-    return bin;
-}
-
 void open(const std::string &db_dir) {
     if (handle) return;
-    SDB_CHECK(seekdb_open(resolve_bin_path(), db_dir.c_str(), 0, &handle));
-}
-
-void open_with_service(const std::string &db_dir, int port) {
-    if (handle) return;
-    SDB_CHECK(seekdb_open(resolve_bin_path(), db_dir.c_str(), port, &handle));
+    SDB_CHECK(seekdb_open(db_dir.c_str(), 0, &handle));
 }
 
 std::shared_ptr<Connection> connect(const std::string &database, bool autocommit) {
@@ -262,9 +219,8 @@ void close() {
 
 } // namespace seekdb
 
-// ---------- module ----------
 
-PYBIND11_MODULE(seekdb_pyclient, m) {
+PYBIND11_MODULE(pylibseekdb, m) {
     m.doc() = "Python bindings for seekdb-client (out-of-process MySQL-compatible client). "
               "Surface mirrors seekdb's ob_embed_impl.cpp.";
     m.attr("__version__") = "0.1.0";
@@ -275,11 +231,6 @@ PYBIND11_MODULE(seekdb_pyclient, m) {
 
     m.def("open", &seekdb::open,
           py::arg("db_dir") = default_service_path,
-          "open db");
-
-    m.def("open_with_service", &seekdb::open_with_service,
-          py::arg("db_dir") = default_service_path,
-          py::arg("port") = 2881,
           "open db");
 
     m.def("connect", &seekdb::connect,

@@ -35,14 +35,12 @@ namespace {
 
 class TwoClientsOpen : public ::testing::Test {
 protected:
-    std::string bin_path_;
     std::string db_dir_;
 
     void SetUp() override {
         const char *bin = std::getenv("SEEKDB_BIN");
         ASSERT_NE(bin, nullptr) << "set SEEKDB_BIN to the seekdb binary";
-        bin_path_ = bin;
-        ASSERT_TRUE(fs::exists(bin_path_));
+        ASSERT_TRUE(fs::exists(bin));
 
         db_dir_ = make_per_test_db_dir(SEEKDB_TEST_DATA_ROOT);
         fs::create_directories(db_dir_);
@@ -72,7 +70,7 @@ TEST_F(TwoClientsOpen, TwoConcurrentClients)
 
     auto run_client = [&](int &open_rc, bool &opened_flag) {
         SeekdbHandle h = nullptr;
-        open_rc = seekdb_open(bin_path_.c_str(), db_dir_.c_str(), 0, &h);
+        open_rc = seekdb_open(db_dir_.c_str(), 0, &h);
         tlog("seekdb_open return %d\n", open_rc);
 
         if (open_rc == SEEKDB_SUCCESS && h != nullptr) {
@@ -162,7 +160,7 @@ TEST_F(TwoClientsOpen, BArrivesAfterAStartup)
 
     auto run_client = [&](SeekdbHandle &h, SeekdbConnection &c,
                           int &open_rc, int &query_rc, bool &opened_flag) {
-        open_rc = seekdb_open(bin_path_.c_str(), db_dir_.c_str(), 0, &h);
+        open_rc = seekdb_open(db_dir_.c_str(), 0, &h);
         if (open_rc == SEEKDB_SUCCESS) {
             int64_t pid = ((SeekdbHandleImpl *)h)->spawned_pid;
             { std::lock_guard<std::mutex> lk(m); spawned_pids.push_back(pid); }
@@ -264,7 +262,7 @@ TEST_F(TwoClientsOpen, ClientBSeesClientAWrite)
 
     auto run_a = [&]() {
         SeekdbHandle h = nullptr;
-        a_open_rc = seekdb_open(bin_path_.c_str(), db_dir_.c_str(), 0, &h);
+        a_open_rc = seekdb_open(db_dir_.c_str(), 0, &h);
         if (a_open_rc == SEEKDB_SUCCESS && h != nullptr) {
             int64_t pid = ((SeekdbHandleImpl *)h)->spawned_pid;
             { std::lock_guard<std::mutex> lk(m); spawned_pids.push_back(pid); }
@@ -300,7 +298,7 @@ TEST_F(TwoClientsOpen, ClientBSeesClientAWrite)
 
     auto run_b = [&]() {
         SeekdbHandle h = nullptr;
-        b_open_rc = seekdb_open(bin_path_.c_str(), db_dir_.c_str(), 0, &h);
+        b_open_rc = seekdb_open(db_dir_.c_str(), 0, &h);
         if (b_open_rc == SEEKDB_SUCCESS && h != nullptr) {
             int64_t pid = ((SeekdbHandleImpl *)h)->spawned_pid;
             { std::lock_guard<std::mutex> lk(m); spawned_pids.push_back(pid); }

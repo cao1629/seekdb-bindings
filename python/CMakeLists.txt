@@ -20,23 +20,52 @@ endif()
 message(STATUS "pybind11 cmake dir: ${pybind11_DIR}")
 find_package(pybind11 CONFIG REQUIRED)
 
-# ------ seekdb-client locations (override via -D on cmake cmd line) ------
-set(SEEKDB_CLIENT_DIR     "$ENV{HOME}/repo/seekdb-client"  CACHE PATH "seekdb-client checkout")
-set(SEEKDB_CLIENT_LIB_DIR "${SEEKDB_CLIENT_DIR}/build"     CACHE PATH "Where libseekdb_client.so lives")
+# ------ seekdb-client build location (REQUIRED) ------
+# Must point at the directory containing both libseekdb_client.so and the
+# seekdb server binary — i.e., the top-level project's build directory after
+# it was built with -DSEEKDB_BIN=<path>.
+set(SEEKDB_CLIENT_LIB_DIR "" CACHE PATH
+    "Build dir containing libseekdb_client.so and the seekdb binary")
+
+if (NOT SEEKDB_CLIENT_LIB_DIR)
+    message(FATAL_ERROR
+        "SEEKDB_CLIENT_LIB_DIR is not set. Pass on the cmake command line:\n"
+        "    cmake -B build -DSEEKDB_CLIENT_LIB_DIR=<seekdb-bindings/build>")
+endif()
+if (NOT EXISTS "${SEEKDB_CLIENT_LIB_DIR}/libseekdb_client.so")
+    message(FATAL_ERROR
+        "libseekdb_client.so not found at ${SEEKDB_CLIENT_LIB_DIR}.\n"
+        "Build the top-level project first.")
+endif()
+if (NOT EXISTS "${SEEKDB_CLIENT_LIB_DIR}/seekdb")
+    message(FATAL_ERROR
+        "seekdb binary not found at ${SEEKDB_CLIENT_LIB_DIR}/seekdb.\n"
+        "Configure the top-level build with -DSEEKDB_BIN=<path-to-seekdb>.")
+endif()
 
 # ------ Build the extension ------
-# Module name `seekdb_pyclient` — distinct from `libseekdb_client.so` to avoid
+# Module name `pylibseekdb` — distinct from `libseekdb_client.so` to avoid
 # CMake target/link-library name collision.
-pybind11_add_module(seekdb_pyclient src/bindings.cpp)
+pybind11_add_module(pylibseekdb src/bindings.cpp)
 
-target_include_directories(seekdb_pyclient PRIVATE "${SEEKDB_CLIENT_DIR}/include")
-target_link_libraries(seekdb_pyclient PRIVATE
+target_include_directories(pylibseekdb PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../include")
+target_link_libraries(pylibseekdb PRIVATE
     "${SEEKDB_CLIENT_LIB_DIR}/libseekdb_client.so"
 )
 
-# RPATH so libseekdb_client.so resolves at runtime without LD_LIBRARY_PATH
-set_target_properties(seekdb_pyclient PROPERTIES
-    INSTALL_RPATH         "${SEEKDB_CLIENT_LIB_DIR}"
-    BUILD_RPATH           "${SEEKDB_CLIENT_LIB_DIR}"
+# libseekdb_client.so and the seekdb binary are both expected to live next to
+# pylibseekdb.so at runtime (matches the wheel-bundling layout, and lets
+# seekdb_open()'s dladdr-based binary discovery find seekdb in the same dir).
+# RPATH=$ORIGIN makes the dynamic linker look alongside the extension.
+set_target_properties(pylibseekdb PROPERTIES
+    INSTALL_RPATH         "$ORIGIN"
+    BUILD_RPATH           "$ORIGIN"
     BUILD_WITH_INSTALL_RPATH TRUE
 )
+
+# Copy libseekdb_client.so + seekdb from the host build dir into this python
+# build dir at CONFIGURE time, so $ORIGIN-RPATH (and seekdb_open's dladdr
+# discovery) find them next to pylibseekdb.so. Re-cmake to refresh.
+file(COPY "${SEEKDB_CLIENT_LIB_DIR}/libseekdb_client.so" DESTINATION "${CMAKE_BINARY_DIR}")
+file(COPY "${SEEKDB_CLIENT_LIB_DIR}/seekdb"              DESTINATION "${CMAKE_BINARY_DIR}")

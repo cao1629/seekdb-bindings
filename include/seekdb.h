@@ -19,6 +19,7 @@ typedef enum {
     SEEKDB_SUCCESS = 0,
     SEEKDB_INTERNAL_ERROR = -1,
     SEEKDB_INVALID_ARGUMENT = -2,
+    SEEKDB_NO_MORE_ROWS = -3,
     // ...
 } SeekdbReturnCode;
 
@@ -35,8 +36,10 @@ typedef enum {
     // ...
 } SeekdbTypeId;
 
-int seekdb_open(const char *bin_path, const char *db_dir, int port,
-                SeekdbHandle *out_handle);
+/* Locates the seekdb server binary as "<libseekdb_client.so's dir>/seekdb"
+ * (".exe" suffix on Windows) — the binary must ship alongside the shared
+ * library, which is the wheel / install layout. */
+int seekdb_open(const char *db_dir, int port, SeekdbHandle *out_handle);
 int seekdb_close(SeekdbHandle handle);
 
 int seekdb_connect(SeekdbHandle handle, const char *database, bool autocommit,

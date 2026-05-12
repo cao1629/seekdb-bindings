@@ -1,5 +1,14 @@
 #pragma once
 
+/* Timestamped debug print. Format: [HH:MM:SS.mmm T=<tid>] ...
+ * Compile-gated via SEEKDB_ENABLE_LOG — when not defined, tlog(...) expands
+ * to a no-op and arguments are not evaluated.
+ *
+ * Enable from the top-level build with:
+ *     cmake -B build -DSEEKDB_ENABLE_LOG=ON
+ */
+#ifdef SEEKDB_ENABLE_LOG
+
 #include <chrono>
 #include <cstdarg>
 #include <cstdio>
@@ -7,8 +16,6 @@
 #include <functional>
 #include <thread>
 
-/* Timestamped debug print. Format: [HH:MM:SS.mmm T=<tid>] ...
- * Built into a single fputs so output is atomic per stream-locking. */
 inline void tlog(const char *fmt, ...)
 {
     using namespace std::chrono;
@@ -39,3 +46,9 @@ inline void tlog(const char *fmt, ...)
     std::snprintf(buf, sizeof(buf), "%.*s%s", p, prefix, msg);
     std::fputs(buf, stdout);
 }
+
+#else  /* SEEKDB_ENABLE_LOG not defined */
+
+#define tlog(...) ((void)0)
+
+#endif

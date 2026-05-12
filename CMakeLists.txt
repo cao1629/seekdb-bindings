@@ -97,6 +97,14 @@ if (NOT MSVC)
     target_compile_options(seekdb_client_objs PRIVATE -Wall -Wextra -Wno-unused-parameter)
 endif()
 
+# Enable the tlog timestamped debug prints. Off by default. When ON, the
+# SEEKDB_ENABLE_LOG macro is defined for seekdb_client_objs's compile units;
+# tlog.h gates its body on that.
+option(SEEKDB_ENABLE_LOG "Enable tlog() debug prints in seekdb_client" OFF)
+if (SEEKDB_ENABLE_LOG)
+    target_compile_definitions(seekdb_client_objs PRIVATE SEEKDB_ENABLE_LOG)
+endif()
+
 add_library(seekdb_client        SHARED $<TARGET_OBJECTS:seekdb_client_objs>)
 add_library(seekdb_client_static STATIC $<TARGET_OBJECTS:seekdb_client_objs>)
 
@@ -113,6 +121,21 @@ foreach(_t seekdb_client seekdb_client_static)
     target_link_libraries(${_t} PRIVATE ${MARIADB_LIBRARY} Threads::Threads)
 endforeach()
 
+# Path to the seekdb server binary. seekdb_open() locates it as
+# "<libseekdb_client.so's dir>/seekdb" (or .exe on Windows), so we copy
+# it next to the .so as a build-time step.
+set(SEEKDB_BIN "$ENV{SEEKDB_BIN}" CACHE FILEPATH "Path to the seekdb server binary")
+
+if (SEEKDB_BIN)
+    if (NOT EXISTS "${SEEKDB_BIN}")
+        message(FATAL_ERROR "SEEKDB_BIN does not exist: ${SEEKDB_BIN}")
+    endif()
+    # Copy at CONFIGURE time. file(COPY) preserves the source's basename and
+    # permissions; the destination is a directory. Re-cmake to refresh if
+    # SEEKDB_BIN changes on disk.
+    file(COPY "${SEEKDB_BIN}" DESTINATION "${CMAKE_BINARY_DIR}")
+endif()
+
 # ----------------------------------------------------------------------------
 # CLI tool
 # ----------------------------------------------------------------------------
@@ -122,6 +145,12 @@ target_include_directories(seekdb_cli PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${MARIADB_INCLUDE_DIRS})
 target_link_libraries(seekdb_cli PRIVATE seekdb_client)
+# Look for libseekdb_client.so in seekdb_cli's own dir at runtime so the
+# binary works from any install location, not just the build tree.
+set_target_properties(seekdb_cli PROPERTIES
+    INSTALL_RPATH         "$ORIGIN"
+    BUILD_RPATH           "$ORIGIN"
+    BUILD_WITH_INSTALL_RPATH TRUE)
 
 # ----------------------------------------------------------------------------
 # Tests

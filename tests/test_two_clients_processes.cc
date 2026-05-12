@@ -28,14 +28,12 @@ namespace {
 
 class TwoClientsProcesses : public ::testing::Test {
 protected:
-    std::string bin_path_;
     std::string db_dir_;
 
     void SetUp() override {
         const char *bin = std::getenv("SEEKDB_BIN");
         ASSERT_NE(bin, nullptr) << "set SEEKDB_BIN to the seekdb binary";
-        bin_path_ = bin;
-        ASSERT_TRUE(fs::exists(bin_path_));
+        ASSERT_TRUE(fs::exists(bin));
 
         db_dir_ = make_per_test_db_dir(SEEKDB_TEST_DATA_ROOT);
         fs::create_directories(db_dir_);
@@ -59,7 +57,7 @@ TEST_F(TwoClientsProcesses, KillTwoClientProcessesOneByOne)
     if (a_pid == 0) {
         close(ready_a[0]);
         SeekdbHandle h = nullptr;
-        if (seekdb_open(bin_path_.c_str(), db_dir_.c_str(), 2991, &h)
+        if (seekdb_open(db_dir_.c_str(), 0, &h)
             != SEEKDB_SUCCESS) _exit(10);
         char byte = 'Y';
         if (write(ready_a[1], &byte, 1) != 1) _exit(13);
@@ -94,7 +92,7 @@ TEST_F(TwoClientsProcesses, KillTwoClientProcessesOneByOne)
 
         char byte = 'Y';
         SeekdbHandle h = nullptr;
-        if (seekdb_open(bin_path_.c_str(), db_dir_.c_str(), 2991, &h)
+        if (seekdb_open(db_dir_.c_str(), 0, &h)
             != SEEKDB_SUCCESS) _exit(10);
         if (write(open_done[1], &byte, 1) != 1) _exit(13);
 

@@ -120,9 +120,11 @@ static int try_connect(SeekdbHandleImpl *h)
     MYSQL *m = mysql_init(NULL);
     if (!m) return 0;
 
-    // char no_ssl = 0;
-    // mysql_options(m, MYSQL_OPT_SSL_ENFORCE,            &no_ssl);
-    // mysql_options(m, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &no_ssl);
+    /* Disable TLS — seekdb's local listeners don't speak TLS. libmariadb 3.4
+     * keeps MYSQL_OPT_SSL_ENFORCE for compat (marked deprecated, still honored). */
+    char no_ssl = 0;
+    mysql_options(m, MYSQL_OPT_SSL_ENFORCE,            &no_ssl);
+    mysql_options(m, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &no_ssl);
 
     const bool use_tcp = h->port != 0;
 #ifdef _WIN32
@@ -210,11 +212,34 @@ static int wait_for_ready(SeekdbHandleImpl *h, Process *spawned)
     }
 }
 
-int seekdb_open(const char *bin_path, const char *db_dir, int port,
-                SeekdbHandle *out_handle)
+/* Resolve the seekdb server binary path as "<libseekdb_client.so's dir>/seekdb"
+ * (".exe" suffix on Windows). The binary is expected to ship alongside the
+ * shared library — that's the wheel/install layout. Writes the result into
+ * `buf` (NUL-terminated). Returns SEEKDB_SUCCESS or SEEKDB_INTERNAL_ERROR. */
+static int resolve_bin_path(char *buf, size_t buflen)
 {
-    if (!bin_path || !db_dir || !out_handle) return SEEKDB_INVALID_ARGUMENT;
+    char dir[1024];
+    if (port_get_self_module_dir(dir, sizeof(dir)) != OK) return SEEKDB_INTERNAL_ERROR;
+#ifdef _WIN32
+    int n = snprintf(buf, buflen, "%s\\seekdb.exe", dir);
+#else
+    int n = snprintf(buf, buflen, "%s/seekdb", dir);
+#endif
+    if (n < 0 || (size_t)n >= buflen) return SEEKDB_INTERNAL_ERROR;
+    return SEEKDB_SUCCESS;
+}
+
+int seekdb_open(const char *db_dir, int port, SeekdbHandle *out_handle)
+{
+    if (!db_dir || !out_handle) return SEEKDB_INVALID_ARGUMENT;
     *out_handle = NULL;
+
+    char bin_path[1024];
+    if (resolve_bin_path(bin_path, sizeof(bin_path)) != SEEKDB_SUCCESS) {
+        tlog("seekdb_open: cannot resolve seekdb binary "
+             "(set SEEKDB_BIN or place seekdb next to libseekdb_client)\n");
+        return SEEKDB_INTERNAL_ERROR;
+    }
 
     tlog("seekdb_open: bin=%s db_dir=%s\n", bin_path, db_dir);
 
@@ -529,6 +554,7 @@ int seekdb_query(SeekdbConnection connection, const char *sql, int64_t sql_len,
     SeekdbResultImpl *r = (SeekdbResultImpl *)calloc(1, sizeof(*r));
     if (!r) { if (res) mysql_free_result(res); return SEEKDB_INTERNAL_ERROR; }
 
+    r->mysql        = c->mysql;
     r->mysql_res    = res;
     r->column_count = res ? (int)mysql_num_fields(res) : 0;
 
@@ -593,9 +619,16 @@ int seekdb_result_next(SeekdbResult result)
     if (!result) return SEEKDB_INVALID_ARGUMENT;
     SeekdbResultImpl *r = (SeekdbResultImpl *)result;
     if (!r->mysql_res) return SEEKDB_INTERNAL_ERROR;
-    r->current_row     = mysql_fetch_row(r->mysql_res);
-    r->current_lengths = r->current_row ? mysql_fetch_lengths(r->mysql_res) : NULL;
-    return r->current_row ? SEEKDB_SUCCESS : SEEKDB_INTERNAL_ERROR;
+    r->current_row = mysql_fetch_row(r->mysql_res);
+    if (!r->current_row) {
+        /* NULL from mysql_fetch_row means either end-of-result or an actual
+         * fetch error. mysql_errno on the parent connection distinguishes. */
+        r->current_lengths = NULL;
+        return (mysql_errno(r->mysql) == 0) ? SEEKDB_NO_MORE_ROWS
+                                            : SEEKDB_INTERNAL_ERROR;
+    }
+    r->current_lengths = mysql_fetch_lengths(r->mysql_res);
+    return SEEKDB_SUCCESS;
 }
 
 int seekdb_result_get_int64(SeekdbResult result, int64_t index, int64_t *out_value)

@@ -117,6 +117,18 @@ int is_server_reaped(int64_t pid);
  */
 int terminate_process(int64_t pid, int graceful);
 
+/*
+ * Write the absolute path of the directory containing the binary that this
+ * function is statically linked into (typically libseekdb_client.so when
+ * loaded as a shared library, or the executable when statically linked).
+ * `buf` receives the path, NUL-terminated, no trailing slash. Returns OK
+ * on success, ERR on failure (path too long, OS-call failure).
+ *
+ * Used by seekdb_open to locate the seekdb server binary next to its own
+ * shared library, so callers don't need to pass a bin_path.
+ */
+int port_get_self_module_dir(char *buf, size_t buflen);
+
 /* ====================================================== filesystem ===== */
 
 /*
