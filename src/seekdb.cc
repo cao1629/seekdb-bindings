@@ -440,15 +440,15 @@ int seekdb_connect(SeekdbHandle handle, const char *database, bool autocommit,
                             0))
     {
         if (use_tcp) {
-            fprintf(stderr, "seekdb: connect(%s:%d) failed: %s\n",
-                    h->host, h->port, mysql_error(c->mysql));
+            tlog("seekdb_connect failed: %s:%d: %s\n",
+                 h->host, h->port, mysql_error(c->mysql));
         } else {
 #ifdef _WIN32
-            fprintf(stderr, "seekdb: connect(\\\\.\\pipe\\%s) failed: %s\n",
-                    h->pipe_name, mysql_error(c->mysql));
+            tlog("seekdb_connect failed: \\\\.\\pipe\\%s: %s\n",
+                 h->pipe_name, mysql_error(c->mysql));
 #else
-            fprintf(stderr, "seekdb: connect(%s) failed: %s\n",
-                    h->sock_path, mysql_error(c->mysql));
+            tlog("seekdb_connect failed: %s: %s\n",
+                 h->sock_path, mysql_error(c->mysql));
 #endif
         }
         mysql_close(c->mysql);
