@@ -33,12 +33,6 @@ endif()
 # libmariadb — vendored as a git submodule at deps/mariadb-connector-c.
 # ----------------------------------------------------------------------------
 
-if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/deps/mariadb-connector-c/CMakeLists.txt")
-    message(FATAL_ERROR
-        "deps/mariadb-connector-c is empty.  Run:\n"
-        "    git submodule update --init --recursive")
-endif()
-
 # Trim mariadb-connector-c down to what we need.
 #   WITH_SSL is mandatory upstream (must be OPENSSL/GNUTLS/SCHANNEL), so
 #   we leave it ON — the submodule will use OpenSSL via the system on Linux
@@ -134,14 +128,7 @@ target_link_libraries(seekdb_cli PRIVATE seekdb_client)
 # ----------------------------------------------------------------------------
 
 # Google Test — vendored as a git submodule at deps/googletest, pinned
-# to v1.14.0. Run `git submodule update --init --recursive` after a
-# fresh clone.
-if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/deps/googletest/CMakeLists.txt")
-    message(FATAL_ERROR
-        "deps/googletest is empty.  Run:\n"
-        "    git submodule update --init --recursive")
-endif()
-
+# to v1.14.0.
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 add_subdirectory(deps/googletest EXCLUDE_FROM_ALL)
 include(GoogleTest)
