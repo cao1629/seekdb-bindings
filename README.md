@@ -1,115 +1,84 @@
 # seekdb-bindings
 
-C client library (`libseekdb_client.so`), CLI tool (`seekdb_cli`), and Python bindings (`seekdb_pyclient`) for the [seekdb](https://github.com/oceanbase/oceanbase) server.
+C client library, CLI, and Python bindings for [seekdb](https://github.com/oceanbase/oceanbase).
 
-## Build
+## Clone
+
+The repo uses git submodules (mariadb-connector-c, googletest, openssl). Clone with `--recursive` so they come along:
 
 ```sh
 git clone --recursive https://github.com/cao1629/seekdb-bindings.git
 cd seekdb-bindings
-cmake -B build
-cmake --build build -j
 ```
 
-If you didn't clone with `--recursive`:
+If you already cloned without `--recursive`, init the submodules after the fact:
 
 ```sh
 git submodule update --init --recursive
 ```
 
-This produces:
-
-- `build/libseekdb_client.so` — the client library
-- `build/seekdb_cli` — interactive SQL CLI
-- `build/test_one_client_process`, `build/test_two_clients_processes`, `build/test_two_clients_threads` — gtest binaries
-
-## seekdb_cli
-
-Interactive SQL client, same shape as `mysql`/`mariadb`.
+## Build libseekdb_client
 
 ```sh
-./build/seekdb_cli <seekdb_daemon_bin> <db_dir>
+mkdir build && cd build
+cmake -DSEEKDB_BIN=/path/to/seekdb ..
+cmake --build .
 ```
 
-- `<seekdb_daemon_bin>` — path to the seekdb server binary (e.g. `~/seekdb/build_debug/src/observer/seekdb`)
-- `<db_dir>` — directory for this seekdb instance's data. Created if missing. The CLI spawns a server here on first connect.
+### Enable / disable debug logs
+Enable:
 
-Example session:
-
-```
-$ ./build/seekdb_cli ~/seekdb/build_debug/src/observer/seekdb /tmp/mydb
-Welcome to the SeekDB monitor.
-Type 'help' for help. Terminate each statement with ';'.
-
-seekdb> CREATE DATABASE test;
-Query OK
-
-seekdb> CREATE TABLE test.t1 (a INT, b VARCHAR(32));
-Query OK
-
-seekdb> INSERT INTO test.t1 VALUES (1, 'hello'), (2, 'world');
-Query OK
-
-seekdb> SELECT * FROM test.t1;
-+---+-------+
-| a | b     |
-+---+-------+
-| 1 | hello |
-| 2 | world |
-+---+-------+
-2 rows in set
-
-seekdb> quit
+```sh
+cmake -DSEEKDB_BIN=... -DSEEKDB_ENABLE_LOG=ON ..
+cmake --build .
 ```
 
-Terminate statements with `;`. Type `quit` or `exit` to leave (or Ctrl-D).
+Disable (default):
+
+```sh
+cmake -DSEEKDB_BIN=... ..
+cmake --build .
+```
+
+
+## Use seekdb_cli
+
+Interactive SQL client, same shape as `mysql`/`mariadb`:
+
+```sh
+./build/seekdb_cli [db_dir]
+```
+
+`db_dir` is optional — defaults to `./seekdb.db` (created if missing). The seekdb server binary is auto-discovered next to `libseekdb_client.so` (which is also next to `seekdb_cli`).
+
 
 ## Python bindings
 
-Build the extension (requires `pybind11` for the chosen Python):
+Build the `pylibseekdb` extension. Requires `pybind11` for the Python interpreter you build against:
 
 ```sh
-pip install --user pybind11
+python3 -m pip install --user pybind11
+```
+
+Then:
+
+```sh
 cd python
-cmake -B build \
-  -DSEEKDB_CLIENT_DIR=$PWD/.. \
-  -DSEEKDB_CLIENT_LIB_DIR=$PWD/../build
-cmake --build build -j
+mkdir build && cd build
+cmake ..
+cmake --build .
 ```
 
-This produces `python/build/seekdb_pyclient.cpython-*.so`.
+`SEEKDB_CLIENT_LIB_DIR` defaults to `../build` (the top-level build dir). Override with `-DSEEKDB_CLIENT_LIB_DIR=<path>` if your layout differs.
 
-### Run the bundled test
+
+### Run the tests
+
+Point `PYTHONPATH` at the python build dir so `import pylibseekdb` resolves:
 
 ```sh
-export SEEKDB_BIN=~/seekdb/build_debug/src/observer/seekdb   # seekdb server binary
-export SEEKDB_DB=/tmp/seekdb_python_test_data                 # optional, default shown
-python3 python/tests/test.py
+export PYTHONPATH=$PWD/python/build
+python3 python/tests/test.py           
+python3 python/tests/test_all_types.py  
+python3 python/tests/seekdb_test.py   
 ```
-
-Expected output:
-
-```
-sc.open(db_dir=/tmp/seekdb_python_test_data)
-sc.connect(database='test', autocommit=True)
-cur.execute("SELECT 1")
-  row count returned: 1
-cur.fetchall():
-  (1,)
-OK
-```
-
-### Usage from your own code
-
-```python
-import seekdb_pyclient as sc
-
-sc.open(db_dir="/tmp/mydb")
-conn = sc.connect(database="test", autocommit=True)
-cur = conn.cursor()
-cur.execute("SELECT 1")
-for row in cur.fetchall():
-    print(row)
-```
-
-Set `SEEKDB_BIN` to the seekdb server binary path before importing — `sc.open` spawns the server.

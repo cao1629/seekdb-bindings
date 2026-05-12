@@ -21,22 +21,11 @@ if (WIN32)
     add_compile_definitions(WIN32_LEAN_AND_MEAN)
 endif()
 
-# When cross-compiling for Android, the NDK toolchain sets CMAKE_FIND_ROOT_PATH
-# to the cross sysroot only. find_package(OpenSSL) will ignore OPENSSL_ROOT_DIR
-# if it's outside that path. Whitelist our project-built OpenSSL so mariadb-
-# connector-c picks it up.
 if (ANDROID AND DEFINED OPENSSL_ROOT_DIR)
     list(APPEND CMAKE_FIND_ROOT_PATH "${OPENSSL_ROOT_DIR}")
 endif()
 
-# ----------------------------------------------------------------------------
-# libmariadb — vendored as a git submodule at deps/mariadb-connector-c.
-# ----------------------------------------------------------------------------
 
-# Trim mariadb-connector-c down to what we need.
-#   WITH_SSL is mandatory upstream (must be OPENSSL/GNUTLS/SCHANNEL), so
-#   we leave it ON — the submodule will use OpenSSL via the system on Linux
-#   and via Homebrew on macOS.
 set(WITH_UNIT_TESTS    OFF CACHE BOOL "" FORCE)
 set(WITH_CURL          OFF CACHE BOOL "" FORCE)
 set(WITH_DOCS          OFF CACHE BOOL "" FORCE)
@@ -51,8 +40,7 @@ if(WIN32)
     set(ZLIB_LIBRARY zlib CACHE STRING "" FORCE)
 endif()
 
-# seekdb_client is built static today, but if downstream consumers ever wrap
-# it in a shared library we need PIC code for the bundled libmariadb.
+
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # mariadb-connector-c's install rules reference INSTALL_PLUGINDIR /

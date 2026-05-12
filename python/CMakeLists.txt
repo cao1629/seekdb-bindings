@@ -20,22 +20,20 @@ endif()
 message(STATUS "pybind11 cmake dir: ${pybind11_DIR}")
 find_package(pybind11 CONFIG REQUIRED)
 
-# ------ seekdb-client build location (REQUIRED) ------
-# Must point at the directory containing both libseekdb_client.so and the
-# seekdb server binary — i.e., the top-level project's build directory after
-# it was built with -DSEEKDB_BIN=<path>.
-set(SEEKDB_CLIENT_LIB_DIR "" CACHE PATH
+# ------ seekdb-client build location ------
+# Defaults to the top-level project's build/ directory (../build relative to
+# this python/ subdir). Override with -DSEEKDB_CLIENT_LIB_DIR=<path> if your
+# layout is different. The directory must already contain both
+# libseekdb_client.so and the seekdb binary (produced by the top-level build
+# with -DSEEKDB_BIN=<path>).
+set(SEEKDB_CLIENT_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build" CACHE PATH
     "Build dir containing libseekdb_client.so and the seekdb binary")
 
-if (NOT SEEKDB_CLIENT_LIB_DIR)
-    message(FATAL_ERROR
-        "SEEKDB_CLIENT_LIB_DIR is not set. Pass on the cmake command line:\n"
-        "    cmake -B build -DSEEKDB_CLIENT_LIB_DIR=<seekdb-bindings/build>")
-endif()
 if (NOT EXISTS "${SEEKDB_CLIENT_LIB_DIR}/libseekdb_client.so")
     message(FATAL_ERROR
         "libseekdb_client.so not found at ${SEEKDB_CLIENT_LIB_DIR}.\n"
-        "Build the top-level project first.")
+        "Build the top-level project first, or pass\n"
+        "    -DSEEKDB_CLIENT_LIB_DIR=<path-to-build-dir>")
 endif()
 if (NOT EXISTS "${SEEKDB_CLIENT_LIB_DIR}/seekdb")
     message(FATAL_ERROR
