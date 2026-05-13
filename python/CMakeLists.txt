@@ -62,8 +62,17 @@ set_target_properties(pylibseekdb PROPERTIES
     BUILD_WITH_INSTALL_RPATH TRUE
 )
 
-# Copy libseekdb_client.so + seekdb from the host build dir into this python
-# build dir at CONFIGURE time, so $ORIGIN-RPATH (and seekdb_open's dladdr
-# discovery) find them next to pylibseekdb.so. Re-cmake to refresh.
+# In-tree dev: copy libseekdb_client.so + seekdb into this python build dir at
+# CONFIGURE time so $ORIGIN-RPATH (and seekdb_open's dladdr discovery) find
+# them next to pylibseekdb.so when running tests via PYTHONPATH=python/build.
 file(COPY "${SEEKDB_CLIENT_LIB_DIR}/libseekdb_client.so" DESTINATION "${CMAKE_BINARY_DIR}")
 file(COPY "${SEEKDB_CLIENT_LIB_DIR}/seekdb"              DESTINATION "${CMAKE_BINARY_DIR}")
+
+# Wheel-build install rules (dormant during cmake --build; fired by
+# scikit-build-core when building a wheel via `python -m build`).
+# All three artifacts land inside the wheel's pylibseekdb/ package dir.
+install(TARGETS pylibseekdb LIBRARY DESTINATION pylibseekdb)
+install(FILES "${SEEKDB_CLIENT_LIB_DIR}/libseekdb_client.so"
+        DESTINATION pylibseekdb)
+install(PROGRAMS "${SEEKDB_CLIENT_LIB_DIR}/seekdb"
+        DESTINATION pylibseekdb)
