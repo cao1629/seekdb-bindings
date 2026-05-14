@@ -76,3 +76,8 @@ install(FILES "${SEEKDB_CLIENT_LIB_DIR}/libseekdb_client.so"
         DESTINATION pylibseekdb)
 install(PROGRAMS "${SEEKDB_CLIENT_LIB_DIR}/seekdb"
         DESTINATION pylibseekdb)
+# Runtime deps of the seekdb binary that aren't shipped on every distro.
+# Staged into ${SEEKDB_CLIENT_LIB_DIR} by the cibuildwheel before-build hook.
+install(FILES "${SEEKDB_CLIENT_LIB_DIR}/libaio.so.1"
+        DESTINATION pylibseekdb
+        OPTIONAL)

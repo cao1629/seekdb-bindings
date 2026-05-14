@@ -6,13 +6,51 @@ build-backend = "scikit_build_core.build"
 name = "pylibseekdb"
 version = "0.1.0"
 description = "Python bindings for the seekdb C client"
-readme = "../README.md"
 requires-python = ">=3.9"
 license = { text = "Apache-2.0" }
 authors = [{ name = "cao1629" }]
 
 [tool.scikit-build]
 cmake.source-dir = "."
-cmake.targets    = ["pylibseekdb"]
+build.targets    = ["pylibseekdb"]
 wheel.packages   = ["pylibseekdb"]
 build-dir        = "build/{wheel_tag}"
+
+# Tell python/CMakeLists.txt to read libseekdb_client.so + seekdb from
+# /project/build/ — that's where the host's `cd python && cmake -B build
+# -DSEEKDB_BIN=<bin>` already staged them, and cibuildwheel mounts the
+# host's python/ dir as /project inside the container.
+[tool.scikit-build.cmake.define]
+SEEKDB_CLIENT_LIB_DIR = "/project/build"
+
+[tool.cibuildwheel]
+# CPython 3.11, x86_64 manylinux glibc 2.28+. musllinux/aarch64 skipped.
+build  = "cp311-*"
+archs  = ["x86_64"]
+skip   = "*-musllinux_*"
+manylinux-x86_64-image = "manylinux_2_28"
+
+# Route pip inside the container through a China mirror. Flows into the
+# isolated build env that `python -m build` creates (which installs
+# scikit-build-core, pybind11, ninja).
+environment = { PIP_INDEX_URL = "https://pypi.tuna.tsinghua.edu.cn/simple/" }
+
+# We don't rebuild libseekdb_client.so inside the container — the host's
+# `cmake -B python/build` already produced it, and the resulting wheel is
+# tagged linux_x86_64 (auditwheel disabled below), so same-machine glibc
+# match is guaranteed. All we do here is bundle libaio.so.1 next to the
+# seekdb binary and rewrite its RPATH to $ORIGIN.
+before-build = [
+    "yum install -y libaio",
+    "cp /usr/lib64/libaio.so.1 /project/build/",
+    "patchelf --set-rpath '$ORIGIN' /project/build/seekdb",
+]
+
+# Skip auditwheel repair. The wheel keeps a `linux_x86_64` tag (not
+# manylinux_*) — fine for same-machine install. To re-enable for cross-distro
+# portability, investigate the "too-recent versioned symbols" auditwheel
+# reports first (likely libseekdb_client.so links a glibc symbol > 2.28).
+repair-wheel-command = ""
+
+# Smoke test: import + look up a symbol. Runs inside the test venv after install.
+test-command = "python -c \"import pylibseekdb; print(pylibseekdb.open)\""
