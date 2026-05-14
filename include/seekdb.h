@@ -46,6 +46,14 @@ int seekdb_connect(SeekdbHandle handle, const char *database, bool autocommit,
                    SeekdbConnection *out_connection);
 int seekdb_disconnect(SeekdbConnection connection);
 
+/* Underlying server error from the most recent failed call on this
+ * connection. *out_errno is the server error number (0 when there is no
+ * pending error); *out_msg is a NUL-terminated string owned by the
+ * connection and valid only until the next call on it. Either out
+ * parameter may be NULL. */
+int seekdb_last_error(SeekdbConnection connection, int *out_errno,
+                      const char **out_msg);
+
 int seekdb_query(SeekdbConnection connection, const char *sql, int64_t sql_len,
                  SeekdbResult *out_result);
 

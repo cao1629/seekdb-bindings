@@ -34,6 +34,8 @@ public:
     SeekdbError(int code, const char *where)
         : std::runtime_error(std::string(where) + " failed: code=" + std::to_string(code)),
           code_(code) {}
+    SeekdbError(int code, std::string msg)
+        : std::runtime_error(std::move(msg)), code_(code) {}
     int code() const { return code_; }
 private:
     int code_;
@@ -89,8 +91,28 @@ public:
             throw std::runtime_error("Cursor.execute: no connection");
         }
         free_result();
-        SDB_CHECK(seekdb_query(conn_->raw(), sql.c_str(),
-                               static_cast<int64_t>(sql.size()), &result_));
+        int rc = seekdb_query(conn_->raw(), sql.c_str(),
+                              static_cast<int64_t>(sql.size()), &result_);
+        if (rc != SEEKDB_SUCCESS) {
+            // libseekdb_client collapses every server-side failure into
+            // SEEKDB_INTERNAL_ERROR (-1). Pull the real MySQL/OB errno +
+            // message off the connection so callers (and pyseekdb's
+            // "is this a table-missing error?" heuristic) get a useful
+            // signal instead of bare "code=-1".
+            int srv_errno = 0;
+            const char *srv_msg = nullptr;
+            seekdb_last_error(conn_->raw(), &srv_errno, &srv_msg);
+            std::string m = "seekdb_query failed: rc=" + std::to_string(rc);
+            if (srv_errno != 0 || (srv_msg && *srv_msg)) {
+                m += ", server_errno=" + std::to_string(srv_errno);
+                if (srv_msg && *srv_msg) { m += ", server_msg="; m += srv_msg; }
+            }
+            m += ", sql=";
+            // Cap SQL at 500 chars so a huge INSERT doesn't blow up the message.
+            if (sql.size() > 500) { m.append(sql, 0, 500); m += "..."; }
+            else                  { m += sql; }
+            throw SeekdbError(rc, std::move(m));
+        }
         int64_t n = 0;
         if (seekdb_result_row_count(result_, &n) != SEEKDB_SUCCESS) n = 0;
         return static_cast<uint64_t>(n);

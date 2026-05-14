@@ -478,6 +478,16 @@ int seekdb_disconnect(SeekdbConnection connection)
     return SEEKDB_SUCCESS;
 }
 
+int seekdb_last_error(SeekdbConnection connection, int *out_errno,
+                      const char **out_msg)
+{
+    if (!connection) return SEEKDB_INVALID_ARGUMENT;
+    SeekdbConnectionImpl *c = (SeekdbConnectionImpl *)connection;
+    if (out_errno) *out_errno = c->mysql ? (int)mysql_errno(c->mysql) : 0;
+    if (out_msg)   *out_msg   = c->mysql ? mysql_error(c->mysql) : "";
+    return SEEKDB_SUCCESS;
+}
+
 /* ======================================================= transactions == */
 
 static int run_simple(SeekdbConnectionImpl *c, const char *sql, size_t len)
