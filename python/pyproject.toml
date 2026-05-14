@@ -22,15 +22,11 @@ build-dir        = "build/{wheel_tag}"
 # container (which mounts the repo root as /project). No override needed.
 
 [tool.cibuildwheel]
-# CPython 3.11, x86_64 manylinux. musllinux/aarch64 skipped.
-# Image is glibc-2.24-based so wheels are compatible with any glibc >= 2.24
-# (covers the 2.27 deployment target). Note: while auditwheel is disabled
-# below, the produced wheel keeps a "linux_x86_64" tag and pip won't honor
-# any manylinux story regardless of image choice.
+# CPython 3.11, x86_64 manylinux glibc 2.28+. musllinux/aarch64 skipped.
 build  = "cp311-*"
 archs  = ["x86_64"]
 skip   = "*-musllinux_*"
-manylinux-x86_64-image = "manylinux_2_24"
+manylinux-x86_64-image = "manylinux_2_28"
 
 # Route pip inside the container through a China mirror. Flows into the
 # isolated build env that `python -m build` creates (which installs
