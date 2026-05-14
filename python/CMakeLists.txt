@@ -23,15 +23,19 @@ find_package(pybind11 CONFIG REQUIRED)
 # ------ seekdb-client build location ------
 # Defaults to the top-level project's build/ directory (../build relative to
 # this python/ subdir). Override with -DSEEKDB_CLIENT_LIB_DIR=<path> if your
-# layout is different. The directory must already contain both
-# libseekdb_client.so and the seekdb binary (produced by the top-level build
-# with -DSEEKDB_BIN=<path>).
+# layout is different. The directory must already contain both the
+# libseekdb_client shared library and the seekdb binary (produced by the
+# top-level build with -DSEEKDB_BIN=<path>).
 set(SEEKDB_CLIENT_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build" CACHE PATH
-    "Build dir containing libseekdb_client.so and the seekdb binary")
+    "Build dir containing libseekdb_client.{so,dylib} and the seekdb binary")
 
-if (NOT EXISTS "${SEEKDB_CLIENT_LIB_DIR}/libseekdb_client.so")
+# Shared-lib suffix is .so on Linux, .dylib on macOS, .dll on Windows.
+set(_seekdb_client_lib
+    "${SEEKDB_CLIENT_LIB_DIR}/libseekdb_client${CMAKE_SHARED_LIBRARY_SUFFIX}")
+
+if (NOT EXISTS "${_seekdb_client_lib}")
     message(FATAL_ERROR
-        "libseekdb_client.so not found at ${SEEKDB_CLIENT_LIB_DIR}.\n"
+        "libseekdb_client${CMAKE_SHARED_LIBRARY_SUFFIX} not found at ${SEEKDB_CLIENT_LIB_DIR}.\n"
         "Build the top-level project first, or pass\n"
         "    -DSEEKDB_CLIENT_LIB_DIR=<path-to-build-dir>")
 endif()
@@ -49,30 +53,37 @@ pybind11_add_module(pylibseekdb src/bindings.cpp)
 target_include_directories(pylibseekdb PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 target_link_libraries(pylibseekdb PRIVATE
-    "${SEEKDB_CLIENT_LIB_DIR}/libseekdb_client.so"
+    "${_seekdb_client_lib}"
 )
 
-# libseekdb_client.so and the seekdb binary are both expected to live next to
-# pylibseekdb.so at runtime (matches the wheel-bundling layout, and lets
+# libseekdb_client.{so,dylib} and the seekdb binary are both expected to live
+# next to pylibseekdb at runtime (matches the wheel-bundling layout, and lets
 # seekdb_open()'s dladdr-based binary discovery find seekdb in the same dir).
-# RPATH=$ORIGIN makes the dynamic linker look alongside the extension.
+# RPATH/@loader_path makes the dynamic linker look alongside the extension.
+# macOS dyld doesn't understand $ORIGIN; use @loader_path there.
+if(APPLE)
+    set(_seekdb_origin "@loader_path")
+else()
+    set(_seekdb_origin "\$ORIGIN")
+endif()
 set_target_properties(pylibseekdb PROPERTIES
-    INSTALL_RPATH         "$ORIGIN"
-    BUILD_RPATH           "$ORIGIN"
+    INSTALL_RPATH         "${_seekdb_origin}"
+    BUILD_RPATH           "${_seekdb_origin}"
     BUILD_WITH_INSTALL_RPATH TRUE
 )
 
-# In-tree dev: copy libseekdb_client.so + seekdb into this python build dir at
-# CONFIGURE time so $ORIGIN-RPATH (and seekdb_open's dladdr discovery) find
-# them next to pylibseekdb.so when running tests via PYTHONPATH=python/build.
-file(COPY "${SEEKDB_CLIENT_LIB_DIR}/libseekdb_client.so" DESTINATION "${CMAKE_BINARY_DIR}")
-file(COPY "${SEEKDB_CLIENT_LIB_DIR}/seekdb"              DESTINATION "${CMAKE_BINARY_DIR}")
+# In-tree dev: copy libseekdb_client + seekdb into this python build dir at
+# CONFIGURE time so $ORIGIN/@loader_path RPATH (and seekdb_open's dladdr
+# discovery) find them next to pylibseekdb at runtime when running tests via
+# PYTHONPATH=python/build.
+file(COPY "${_seekdb_client_lib}"            DESTINATION "${CMAKE_BINARY_DIR}")
+file(COPY "${SEEKDB_CLIENT_LIB_DIR}/seekdb"  DESTINATION "${CMAKE_BINARY_DIR}")
 
 # Wheel-build install rules (dormant during cmake --build; fired by
 # scikit-build-core when building a wheel via `python -m build`).
 # All three artifacts land inside the wheel's pylibseekdb/ package dir.
 install(TARGETS pylibseekdb LIBRARY DESTINATION pylibseekdb)
-install(FILES "${SEEKDB_CLIENT_LIB_DIR}/libseekdb_client.so"
+install(FILES "${_seekdb_client_lib}"
         DESTINATION pylibseekdb)
 install(PROGRAMS "${SEEKDB_CLIENT_LIB_DIR}/seekdb"
         DESTINATION pylibseekdb)

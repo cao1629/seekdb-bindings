@@ -133,11 +133,17 @@ target_include_directories(seekdb_cli PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${MARIADB_INCLUDE_DIRS})
 target_link_libraries(seekdb_cli PRIVATE seekdb_client)
-# Look for libseekdb_client.so in seekdb_cli's own dir at runtime so the
-# binary works from any install location, not just the build tree.
+# Look for libseekdb_client.{so,dylib} in seekdb_cli's own dir at runtime
+# so the binary works from any install location, not just the build tree.
+# macOS dyld doesn't understand $ORIGIN; use @loader_path there.
+if(APPLE)
+    set(_seekdb_origin "@loader_path")
+else()
+    set(_seekdb_origin "\$ORIGIN")
+endif()
 set_target_properties(seekdb_cli PROPERTIES
-    INSTALL_RPATH         "$ORIGIN"
-    BUILD_RPATH           "$ORIGIN"
+    INSTALL_RPATH         "${_seekdb_origin}"
+    BUILD_RPATH           "${_seekdb_origin}"
     BUILD_WITH_INSTALL_RPATH TRUE)
 
 # ----------------------------------------------------------------------------

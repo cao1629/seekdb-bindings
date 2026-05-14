@@ -16,12 +16,10 @@ build.targets    = ["pylibseekdb"]
 wheel.packages   = ["pylibseekdb"]
 build-dir        = "build/{wheel_tag}"
 
-# Tell python/CMakeLists.txt to read libseekdb_client.so + seekdb from
-# /project/build/ — that's where the host's `cd python && cmake -B build
-# -DSEEKDB_BIN=<bin>` already staged them, and cibuildwheel mounts the
-# host's python/ dir as /project inside the container.
-[tool.scikit-build.cmake.define]
-SEEKDB_CLIENT_LIB_DIR = "/project/build"
+# SEEKDB_CLIENT_LIB_DIR defaults to "${CMAKE_CURRENT_SOURCE_DIR}/../build" in
+# python/CMakeLists.txt — that resolves to ~/seekdb-bindings/build for direct
+# `python -m build` runs, and to /project/build inside the cibuildwheel
+# container (which mounts the repo root as /project). No override needed.
 
 [tool.cibuildwheel]
 # CPython 3.11, x86_64 manylinux glibc 2.28+. musllinux/aarch64 skipped.

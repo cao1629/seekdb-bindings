@@ -12,3 +12,7 @@ compile_commands.json
 
 # cibuildwheel output
 wheelhouse/
+
+# Python virtual environments
+myvenv/
+.venv/
