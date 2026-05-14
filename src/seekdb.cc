@@ -319,7 +319,7 @@ int seekdb_open(const char *db_dir, int port, SeekdbHandle *out_handle)
     snprintf(base_dir_arg, sizeof(base_dir_arg), "--base-dir=%s", db_dir);
     char *argv[] = {(char *)bin_path, base_dir_arg,
                     (char *)"--port=2991",
-                    (char *)"--embedded", (char *)"--nodaemon", NULL};
+                    (char *)"--embedded", (char *)"--nodaemon", (char *)"--memory_limit=1G", NULL};
     if (spawn_process(bin_path, argv, &spawned) != OK) {
         flock_close(startup_lock);
         flock_close(h->clients_lock);
