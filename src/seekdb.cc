@@ -17,16 +17,6 @@
 #define WAIT_INTERVAL_US    (200 * 1000)   /* 200 ms between try_connect polls */
 #define REAPER_INTERVAL_US  (500 * 1000)   /* 500 ms between reaper wakeups */
 
-/* When port == 0 the client picks the platform-native local transport:
- * POSIX → Unix-domain socket at h->sock_path. Windows → named pipe whose
- * suffix the server writes to <db_dir>/run/sql.pipe (per-instance:
- * <pid>-<timestamp>). The client reads that file lazily on first
- * try_connect once the server has started. libmariadb prepends \\.\pipe\
- * internally so we only ever pass the suffix. */
-
-/* Set of spawned servers this process has not yet reaped.
- * A single client process may open multiple seekdb instances (distinct
- * db-dirs), each spawning its own server/ */
 namespace {
 
 std::mutex             g_spawned_mu;
@@ -318,8 +308,10 @@ int seekdb_open(const char *db_dir, int port, SeekdbHandle *out_handle)
     char base_dir_arg[512];
     snprintf(base_dir_arg, sizeof(base_dir_arg), "--base-dir=%s", db_dir);
     char *argv[] = {(char *)bin_path, base_dir_arg,
-                    (char *)"--port=2991",
-                    (char *)"--embedded", (char *)"--nodaemon", (char *)"--memory_limit=1G", NULL};
+                    (char *)"--embedded", (char *)"--nodaemon",
+                    (char *)"--parameter", (char *)"memory_limit=1G",
+                    (char *)"--parameter", (char *)"log_disk_size=2G",
+                    NULL};
     if (spawn_process(bin_path, argv, &spawned) != OK) {
         flock_close(startup_lock);
         flock_close(h->clients_lock);

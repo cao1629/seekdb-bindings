@@ -6,6 +6,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Default to Release with -O2 (not CMake's default -O3) when no build type
+# is set. scikit-build-core / cibuildwheel typically invoke this CMakeLists
+# without -DCMAKE_BUILD_TYPE, so this is the path that fires in practice.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+set(CMAKE_C_FLAGS_RELEASE   "-O2 -DNDEBUG" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG" CACHE STRING "" FORCE)
+
 # ------ Find Python + pybind11 ------
 find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
 execute_process(

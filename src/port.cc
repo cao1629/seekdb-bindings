@@ -175,19 +175,37 @@ int spawn_process(const char *bin_path, char *const argv[], Process **out_proc)
 
     tlog("spawn_process: bin='%s'\n", bin_path);
 
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof(sa);
+    sa.lpSecurityDescriptor = NULL;
+    sa.bInheritHandle = TRUE;
+    HANDLE h_nul_in  = CreateFileA("NUL", GENERIC_READ,  FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                   &sa, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    HANDLE h_nul_out = CreateFileA("NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                   &sa, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    HANDLE h_nul_err = CreateFileA("NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                   &sa, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
     memset(&si, 0, sizeof(si));
     memset(&pi, 0, sizeof(pi));
     si.cb = sizeof(si);
+    si.dwFlags |= STARTF_USESTDHANDLES;
+    si.hStdInput  = h_nul_in;
+    si.hStdOutput = h_nul_out;
+    si.hStdError  = h_nul_err;
 
     BOOL ok = CreateProcessA(bin_path,
                              cmd,
                              NULL, NULL,
-                             FALSE,           /* don't inherit handles */
+                             TRUE,            /* inherit (for NUL handles) */
                              0,
                              NULL, NULL,
                              &si, &pi);
+    CloseHandle(h_nul_in);
+    CloseHandle(h_nul_out);
+    CloseHandle(h_nul_err);
     free(cmd);
     if (!ok) {
         DWORD err = GetLastError();
@@ -250,25 +268,6 @@ int terminate_process(int64_t pid, int graceful)
     return ok ? OK : ERR;
 }
 
-int port_get_self_module_dir(char *buf, size_t buflen)
-{
-    if (!buf || buflen == 0) return ERR_INVALID_ARG;
-    HMODULE mod = NULL;
-    if (!GetModuleHandleExA(
-            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-            GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-            (LPCSTR)&port_get_self_module_dir, &mod) || mod == NULL) {
-        return ERR;
-    }
-    DWORD n = GetModuleFileNameA(mod, buf, (DWORD)buflen);
-    if (n == 0 || n >= buflen) return ERR;
-    /* strip basename */
-    for (char *p = buf + n; p > buf; --p) {
-        if (*p == '\\' || *p == '/') { *p = '\0'; return OK; }
-    }
-    return ERR;
-}
-
 /* ====================================================== filesystem ===== */
 
 int ensure_dir(const char *path)
@@ -282,9 +281,7 @@ int ensure_dir(const char *path)
 #else /* POSIX */
 
 #include <errno.h>
-#include <dlfcn.h>
 #include <fcntl.h>
-#include <limits.h>
 #include <signal.h>
 #include <spawn.h>
 #include <stdio.h>
@@ -362,8 +359,16 @@ int spawn_process(const char *bin_path, char *const argv[], Process **out_proc)
     *out_proc = NULL;
 
     Process *p = (Process *)malloc(sizeof(Process));
+
+    posix_spawn_file_actions_t fa;
+    posix_spawn_file_actions_init(&fa);
+    posix_spawn_file_actions_addopen(&fa, STDIN_FILENO,  "/dev/null", O_RDONLY, 0);
+    posix_spawn_file_actions_addopen(&fa, STDOUT_FILENO, "/dev/null", O_WRONLY, 0);
+    posix_spawn_file_actions_addopen(&fa, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
+
     pid_t pid;
-    int err = posix_spawn(&pid, bin_path, NULL, NULL, argv, NULL);
+    int err = posix_spawn(&pid, bin_path, &fa, NULL, argv, NULL);
+    posix_spawn_file_actions_destroy(&fa);
     if (err != 0) {
         tlog("spawn_process: posix_spawn(%s) failed: errno %d: %s\n",
              bin_path, err, strerror(err));
@@ -383,9 +388,7 @@ int reap_process(Process *proc)
 }
 
 int is_server_reaped(int64_t pid) {
-    /* If the pid is a zombie child of this process, waitpid reaps it now;
-     * otherwise it returns 0 (still running) or -1 (not our child / gone). */
-    waitpid((pid_t)pid, NULL, WNOHANG);
+    printf("is_server_reaped: pid = %d\n", pid);
     return kill((pid_t)pid, 0) == 0 ? 0 : 1;
 }
 
@@ -398,28 +401,6 @@ int terminate_process(int64_t pid, int graceful)
         return ERR;
     }
     return OK;
-}
-
-int port_get_self_module_dir(char *buf, size_t buflen)
-{
-    if (!buf || buflen == 0) return ERR_INVALID_ARG;
-    Dl_info info;
-    if (dladdr((void *)&port_get_self_module_dir, &info) == 0 ||
-        info.dli_fname == NULL) {
-        return ERR;
-    }
-    /* dli_fname may be relative — resolve to absolute. */
-    char abs[PATH_MAX];
-    const char *src = realpath(info.dli_fname, abs) ? abs : info.dli_fname;
-    size_t n = strlen(src);
-    if (n >= buflen) return ERR;
-    memcpy(buf, src, n);
-    buf[n] = '\0';
-    /* strip basename */
-    for (char *p = buf + n; p > buf; --p) {
-        if (*p == '/') { *p = '\0'; return OK; }
-    }
-    return ERR;
 }
 
 /* ====================================================== filesystem ===== */
