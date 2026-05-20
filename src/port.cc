@@ -268,6 +268,24 @@ int terminate_process(int64_t pid, int graceful)
     return ok ? OK : ERR;
 }
 
+int port_get_self_module_dir(char *buf, size_t buflen)
+{
+    if (!buf || buflen == 0) return ERR_INVALID_ARG;
+    HMODULE mod = NULL;
+    if (!GetModuleHandleExA(
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+            GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            (LPCSTR)&port_get_self_module_dir, &mod) || mod == NULL) {
+        return ERR;
+    }
+    DWORD n = GetModuleFileNameA(mod, buf, (DWORD)buflen);
+    if (n == 0 || n >= buflen) return ERR;
+    for (char *p = buf + n; p > buf; --p) {
+        if (*p == '\\' || *p == '/') { *p = '\0'; return OK; }
+    }
+    return ERR;
+}
+
 /* ====================================================== filesystem ===== */
 
 int ensure_dir(const char *path)
@@ -280,8 +298,10 @@ int ensure_dir(const char *path)
 
 #else /* POSIX */
 
+#include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <signal.h>
 #include <spawn.h>
 #include <stdio.h>
@@ -401,6 +421,26 @@ int terminate_process(int64_t pid, int graceful)
         return ERR;
     }
     return OK;
+}
+
+int port_get_self_module_dir(char *buf, size_t buflen)
+{
+    if (!buf || buflen == 0) return ERR_INVALID_ARG;
+    Dl_info info;
+    if (dladdr((void *)&port_get_self_module_dir, &info) == 0 ||
+        info.dli_fname == NULL) {
+        return ERR;
+    }
+    char abs[PATH_MAX];
+    const char *src = realpath(info.dli_fname, abs) ? abs : info.dli_fname;
+    size_t n = strlen(src);
+    if (n >= buflen) return ERR;
+    memcpy(buf, src, n);
+    buf[n] = '\0';
+    for (char *p = buf + n; p > buf; --p) {
+        if (*p == '/') { *p = '\0'; return OK; }
+    }
+    return ERR;
 }
 
 /* ====================================================== filesystem ===== */
