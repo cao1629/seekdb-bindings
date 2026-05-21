@@ -40,23 +40,35 @@ if (SEEKDB_PYTHON_STANDALONE)
     set(SEEKDB_CLIENT_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build" CACHE PATH
         "Build dir containing the prebuilt seekdb_client library and seekdb binary")
 
-    set(_seekdb_client_lib
-        "${SEEKDB_CLIENT_LIB_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}seekdb_client${CMAKE_SHARED_LIBRARY_SUFFIX}")
-    set(_seekdb_bin
-        "${SEEKDB_CLIENT_LIB_DIR}/seekdb${CMAKE_EXECUTABLE_SUFFIX}")
+    set(_seekdb_lib_name "${CMAKE_SHARED_LIBRARY_PREFIX}seekdb_client${CMAKE_SHARED_LIBRARY_SUFFIX}")
+    set(_seekdb_dir "")
+    foreach(_cand
+            "${SEEKDB_CLIENT_LIB_DIR}"
+            "${SEEKDB_CLIENT_LIB_DIR}/Debug"
+            "${SEEKDB_CLIENT_LIB_DIR}/Release"
+            "${SEEKDB_CLIENT_LIB_DIR}/RelWithDebInfo"
+            "${SEEKDB_CLIENT_LIB_DIR}/MinSizeRel")
+        if (EXISTS "${_cand}/${_seekdb_lib_name}")
+            set(_seekdb_dir "${_cand}")
+            break()
+        endif()
+    endforeach()
+    if (_seekdb_dir STREQUAL "")
+        message(FATAL_ERROR
+            "${_seekdb_lib_name} not found under ${SEEKDB_CLIENT_LIB_DIR} (or its Debug/Release subdirs).\n"
+            "Build the top-level project first, or pass\n"
+            "    -DSEEKDB_CLIENT_LIB_DIR=<path-to-build-dir>")
+    endif()
+
+    set(_seekdb_client_lib "${_seekdb_dir}/${_seekdb_lib_name}")
+    set(_seekdb_bin        "${_seekdb_dir}/seekdb${CMAKE_EXECUTABLE_SUFFIX}")
     if (WIN32)
         set(_seekdb_client_link
-            "${SEEKDB_CLIENT_LIB_DIR}/${CMAKE_IMPORT_LIBRARY_PREFIX}seekdb_client${CMAKE_IMPORT_LIBRARY_SUFFIX}")
+            "${_seekdb_dir}/${CMAKE_IMPORT_LIBRARY_PREFIX}seekdb_client${CMAKE_IMPORT_LIBRARY_SUFFIX}")
     else()
         set(_seekdb_client_link "${_seekdb_client_lib}")
     endif()
 
-    if (NOT EXISTS "${_seekdb_client_lib}")
-        message(FATAL_ERROR
-            "${_seekdb_client_lib} not found.\n"
-            "Build the top-level project first, or pass\n"
-            "    -DSEEKDB_CLIENT_LIB_DIR=<path-to-build-dir>")
-    endif()
     if (NOT EXISTS "${_seekdb_bin}")
         message(FATAL_ERROR
             "seekdb binary not found at ${_seekdb_bin}.\n"
