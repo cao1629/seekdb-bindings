@@ -31,10 +31,6 @@ skip   = "*-musllinux_*"
 # scikit-build-core, pybind11, ninja).
 environment = { PIP_INDEX_URL = "https://pypi.tuna.tsinghua.edu.cn/simple/" }
 
-# Skip auditwheel repair. The wheel keeps a `linux_x86_64` tag (not
-# manylinux_*) — fine for same-machine install. To re-enable for cross-distro
-# portability, investigate the "too-recent versioned symbols" auditwheel
-# reports first (likely libseekdb_client.so links a glibc symbol > 2.28).
 repair-wheel-command = ""
 
 # Smoke test: import + look up a symbol. Runs inside the test venv after install.
@@ -48,6 +44,7 @@ before-build = [
     "cp /usr/lib64/libaio.so.1 /project/build/",
     "patchelf --set-rpath '$ORIGIN' /project/build/seekdb",
 ]
+repair-wheel-command = "auditwheel repair --plat manylinux_2_34_x86_64 -w {dest_dir} {wheel}"
 
 [tool.cibuildwheel.macos]
 archs = ["arm64"]
