@@ -229,9 +229,7 @@ std::shared_ptr<Connection> connect(const std::string &database, bool autocommit
     }
     SeekdbConnection c = nullptr;
     SDB_CHECK(seekdb_connect(handle, database.c_str(), autocommit, &c));
-    auto conn = std::make_shared<Connection>(c);
-    conn->cursor().execute("SET NAMES utf8mb4");
-    return conn;
+    return std::make_shared<Connection>(c);
 }
 
 void close() {

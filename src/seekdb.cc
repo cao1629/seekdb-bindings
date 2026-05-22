@@ -115,6 +115,7 @@ static int try_connect(SeekdbHandleImpl *h)
     char no_ssl = 0;
     mysql_options(m, MYSQL_OPT_SSL_ENFORCE,            &no_ssl);
     mysql_options(m, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &no_ssl);
+    mysql_options(m, MYSQL_SET_CHARSET_NAME, "utf8mb4");
 
     const bool use_tcp = h->port != 0;
 #ifdef _WIN32
@@ -406,6 +407,7 @@ int seekdb_connect(SeekdbHandle handle, const char *database, bool autocommit,
         mysql_options(c->mysql, MYSQL_OPT_SSL_ENFORCE,            &no_ssl);
         mysql_options(c->mysql, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &no_ssl);
     }
+    mysql_options(c->mysql, MYSQL_SET_CHARSET_NAME, "utf8mb4");
 #ifdef _WIN32
     if (!use_tcp) {
         mysql_options(c->mysql, MYSQL_OPT_NAMED_PIPE, NULL);
