@@ -1,19 +1,3 @@
-/*
- * port.cc — POSIX and Win32 backends for src/port.h.
- *
- * Whole file is conditionally compiled per platform: Win32 uses
- * LockFileEx / CreateProcess / TerminateProcess; POSIX uses flock /
- * posix_spawn / waitpid / kill.
- *
- * Notes (Win32):
- *   - The `graceful` flag on terminate_process is ignored — Windows
- *     TerminateProcess is always a hard kill. Implementing graceful
- *     would require Ctrl+C event delivery (console children only) or
- *     WM_CLOSE (GUI children only); neither fits a generic daemon.
- *   - Locks cover the entire file (offset 0, length 2^64-1), matching
- *     POSIX flock's whole-file semantics.
- */
-
 #include "port.h"
 #include "tlog.h"
 
@@ -55,8 +39,7 @@ int flock_open(const char *path, Flock **out_flock)
 }
 
 /* Returns 1 if the lock was acquired, 0 otherwise. On a blocking call,
- * logs the OS error if LockFileEx returned FALSE (try-acquire stays
- * silent — failure there is the expected "couldn't get it" path). */
+ * logs the OS error if LockFileEx returned FALSE. */
 static int do_lock(Flock *lock, FlockMode mode, int blocking)
 {
     DWORD flags = (mode == FLOCK_EXCLUSIVE) ? LOCKFILE_EXCLUSIVE_LOCK : 0;
@@ -128,12 +111,6 @@ int flock_close(Flock *lock)
 
 /* ===================================================== Process ====== */
 
-/*
- * Build a Windows command line from argv. CreateProcess wants a single
- * mutable string; this is the simplest reliable encoding (each arg
- * wrapped in double quotes, no embedded-quote handling — sufficient
- * for the seekdb daemon's known-clean argv).
- */
 static char *build_cmdline(char *const argv[])
 {
     size_t total = 0;
@@ -159,8 +136,6 @@ int spawn_process(const char *bin_path, char *const argv[], Process **out_proc)
     if (!bin_path || !argv || !out_proc) return ERR_INVALID_ARG;
     *out_proc = NULL;
 
-    /* Confirm the binary actually exists; CreateProcessA's "file not
-       found" failure mode looks identical to other errors otherwise. */
     DWORD attr = GetFileAttributesA(bin_path);
     if (attr == INVALID_FILE_ATTRIBUTES) {
         tlog("spawn_process: bin_path '%s' not accessible: GetFileAttributesA error %lu\n",
@@ -268,14 +243,14 @@ int terminate_process(int64_t pid, int graceful)
     return ok ? OK : ERR;
 }
 
-int port_get_self_module_dir(char *buf, size_t buflen)
+int get_module_dir(char *buf, size_t buflen)
 {
     if (!buf || buflen == 0) return ERR_INVALID_ARG;
     HMODULE mod = NULL;
     if (!GetModuleHandleExA(
             GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
             GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-            (LPCSTR)&port_get_self_module_dir, &mod) || mod == NULL) {
+            (LPCSTR)&get_module_dir, &mod) || mod == NULL) {
         return ERR;
     }
     DWORD n = GetModuleFileNameA(mod, buf, (DWORD)buflen);
@@ -423,11 +398,11 @@ int terminate_process(int64_t pid, int graceful)
     return OK;
 }
 
-int port_get_self_module_dir(char *buf, size_t buflen)
+int get_module_dir(char *buf, size_t buflen)
 {
     if (!buf || buflen == 0) return ERR_INVALID_ARG;
     Dl_info info;
-    if (dladdr((void *)&port_get_self_module_dir, &info) == 0 ||
+    if (dladdr((void *)&get_module_dir, &info) == 0 ||
         info.dli_fname == NULL) {
         return ERR;
     }

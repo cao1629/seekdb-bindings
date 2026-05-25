@@ -94,7 +94,7 @@ public:
         int rc = seekdb_query(conn_->raw(), sql.c_str(),
                               static_cast<int64_t>(sql.size()), &result_);
         if (rc != SEEKDB_SUCCESS) {
-            // libseekdb_client collapses every server-side failure into
+            // libseekdb_driver collapses every server-side failure into
             // SEEKDB_INTERNAL_ERROR (-1). Pull the real MySQL/OB errno +
             // message off the connection so callers (and pyseekdb's
             // "is this a table-missing error?" heuristic) get a useful
@@ -243,7 +243,7 @@ void close() {
 
 
 PYBIND11_MODULE(pylibseekdb, m) {
-    m.doc() = "Python bindings for seekdb-client (out-of-process MySQL-compatible client). "
+    m.doc() = "Python bindings for seekdb-driver (out-of-process MySQL-compatible client). "
               "Surface mirrors seekdb's ob_embed_impl.cpp.";
     m.attr("__version__") = "0.1.0";
 

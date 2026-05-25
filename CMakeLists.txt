@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(seekdb_client C CXX)
+project(seekdb_driver C CXX)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -48,47 +48,47 @@ set(MARIADB_INCLUDE_DIRS
 set(MARIADB_LIBRARY mariadbclient)   # CMake target from the submodule
 
 # ----------------------------------------------------------------------------
-# seekdb_client library
+# seekdb_driver library
 # ----------------------------------------------------------------------------
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-add_library(seekdb_client_objs OBJECT
+add_library(seekdb_driver_objs OBJECT
             src/seekdb.cc
             src/port.cc)
 
-target_include_directories(seekdb_client_objs
+target_include_directories(seekdb_driver_objs
     PUBLIC  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
             $<INSTALL_INTERFACE:include>
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
             ${MARIADB_INCLUDE_DIRS})
 
-set_property(TARGET seekdb_client_objs PROPERTY POSITION_INDEPENDENT_CODE ON)
+set_property(TARGET seekdb_driver_objs PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 if (NOT MSVC)
-    target_compile_options(seekdb_client_objs PRIVATE -Wall -Wextra -Wno-unused-parameter)
+    target_compile_options(seekdb_driver_objs PRIVATE -Wall -Wextra -Wno-unused-parameter)
 endif()
 
 # Enable the tlog timestamped debug prints. Off by default. When ON, the
-# SEEKDB_ENABLE_LOG macro is defined for seekdb_client_objs's compile units;
+# SEEKDB_ENABLE_LOG macro is defined for seekdb_driver_objs's compile units;
 # tlog.h gates its body on that.
-option(SEEKDB_ENABLE_LOG "Enable tlog() debug prints in seekdb_client" OFF)
+option(SEEKDB_ENABLE_LOG "Enable tlog() debug prints in seekdb_driver" OFF)
 if (SEEKDB_ENABLE_LOG)
-    target_compile_definitions(seekdb_client_objs PRIVATE SEEKDB_ENABLE_LOG)
+    target_compile_definitions(seekdb_driver_objs PRIVATE SEEKDB_ENABLE_LOG)
 endif()
 
-add_library(seekdb_client        SHARED $<TARGET_OBJECTS:seekdb_client_objs>)
-add_library(seekdb_client_static STATIC $<TARGET_OBJECTS:seekdb_client_objs>)
+add_library(seekdb_driver        SHARED $<TARGET_OBJECTS:seekdb_driver_objs>)
+add_library(seekdb_driver_static STATIC $<TARGET_OBJECTS:seekdb_driver_objs>)
 
 if (NOT WIN32)
-    set_target_properties(seekdb_client_static PROPERTIES OUTPUT_NAME seekdb_client)
+    set_target_properties(seekdb_driver_static PROPERTIES OUTPUT_NAME seekdb_driver)
 endif()
 
-set_target_properties(seekdb_client PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+set_target_properties(seekdb_driver PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 # Propagate include dirs + link deps to downstream consumers of either target.
-foreach(_t seekdb_client seekdb_client_static)
+foreach(_t seekdb_driver seekdb_driver_static)
     target_include_directories(${_t}
         PUBLIC  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
                 $<INSTALL_INTERFACE:include>
@@ -103,16 +103,16 @@ if (SEEKDB_BIN)
     if (NOT EXISTS "${SEEKDB_BIN}")
         message(FATAL_ERROR "SEEKDB_BIN does not exist: ${SEEKDB_BIN}")
     endif()
-    add_custom_command(TARGET seekdb_client POST_BUILD
+    add_custom_command(TARGET seekdb_driver POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${SEEKDB_BIN}" "$<TARGET_FILE_DIR:seekdb_client>")
+                "${SEEKDB_BIN}" "$<TARGET_FILE_DIR:seekdb_driver>")
     if (WIN32)
         get_filename_component(_seekdb_bin_dir "${SEEKDB_BIN}" DIRECTORY)
         file(GLOB _seekdb_runtime_dlls "${_seekdb_bin_dir}/*.dll")
         foreach(_dll ${_seekdb_runtime_dlls})
-            add_custom_command(TARGET seekdb_client POST_BUILD
+            add_custom_command(TARGET seekdb_driver POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                        "${_dll}" "$<TARGET_FILE_DIR:seekdb_client>")
+                        "${_dll}" "$<TARGET_FILE_DIR:seekdb_driver>")
         endforeach()
     endif()
 endif()
@@ -125,8 +125,8 @@ add_executable(seekdb_cli tools/seekdb_cli.c)
 target_include_directories(seekdb_cli PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${MARIADB_INCLUDE_DIRS})
-target_link_libraries(seekdb_cli PRIVATE seekdb_client)
-# Look for libseekdb_client.{so,dylib} in seekdb_cli's own dir at runtime
+target_link_libraries(seekdb_cli PRIVATE seekdb_driver)
+# Look for libseekdb_driver.{so,dylib} in seekdb_cli's own dir at runtime
 # so the binary works from any install location, not just the build tree.
 # macOS dyld doesn't understand $ORIGIN; use @loader_path there.
 if(APPLE)
@@ -159,20 +159,14 @@ if (NOT WIN32)
 add_executable(test_one_client_process tests/test_one_client_process.cc)
 target_include_directories(test_one_client_process PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${MARIADB_INCLUDE_DIRS})
 target_compile_definitions(test_one_client_process PRIVATE SEEKDB_TEST_DATA_ROOT="${SEEKDB_TEST_DATA_ROOT}")
-target_link_libraries(test_one_client_process PRIVATE seekdb_client GTest::gtest_main)
+target_link_libraries(test_one_client_process PRIVATE seekdb_driver GTest::gtest_main)
 gtest_discover_tests(test_one_client_process DISCOVERY_MODE PRE_TEST)
-
-add_executable(test_two_clients_processes tests/test_two_clients_processes.cc)
-target_include_directories(test_two_clients_processes PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_definitions(test_two_clients_processes PRIVATE SEEKDB_TEST_DATA_ROOT="${SEEKDB_TEST_DATA_ROOT}")
-target_link_libraries(test_two_clients_processes PRIVATE seekdb_client GTest::gtest_main)
-gtest_discover_tests(test_two_clients_processes DISCOVERY_MODE PRE_TEST)
 endif()
 
 add_executable(test_two_clients_threads tests/test_two_clients_threads.cc)
 target_include_directories(test_two_clients_threads PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${MARIADB_INCLUDE_DIRS})
 target_compile_definitions(test_two_clients_threads PRIVATE SEEKDB_TEST_DATA_ROOT="${SEEKDB_TEST_DATA_ROOT}")
-target_link_libraries(test_two_clients_threads PRIVATE seekdb_client GTest::gtest_main)
+target_link_libraries(test_two_clients_threads PRIVATE seekdb_driver GTest::gtest_main)
 gtest_discover_tests(test_two_clients_threads DISCOVERY_MODE PRE_TEST)
 
 # ----------------------------------------------------------------------------

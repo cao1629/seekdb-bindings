@@ -17,7 +17,7 @@ If you already cloned without `--recursive`, init the submodules after the fact:
 git submodule update --init --recursive
 ```
 
-## Build libseekdb_client
+## Build libseekdb_driver
 
 ```sh
 mkdir build && cd build
@@ -49,7 +49,7 @@ Interactive SQL client, same shape as `mysql`/`mariadb`:
 ./build/seekdb_cli [db_dir]
 ```
 
-`db_dir` is optional — defaults to `./seekdb.db` (created if missing). The seekdb server binary is auto-discovered next to `libseekdb_client.so` (which is also next to `seekdb_cli`).
+`db_dir` is optional — defaults to `./seekdb.db` (created if missing). The seekdb server binary is auto-discovered next to `libseekdb_driver.so` (which is also next to `seekdb_cli`).
 
 
 ## Python bindings

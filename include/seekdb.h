@@ -36,7 +36,7 @@ typedef enum {
     // ...
 } SeekdbTypeId;
 
-/* Locates the seekdb server binary as "<libseekdb_client.so's dir>/seekdb"
+/* Locates the seekdb server binary as "<libseekdb_driver.so's dir>/seekdb"
  * (".exe" suffix on Windows) — the binary must ship alongside the shared
  * library, which is the wheel / install layout. */
 int seekdb_open(const char *db_dir, int port, SeekdbHandle *out_handle);

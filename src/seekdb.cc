@@ -203,14 +203,14 @@ static int wait_for_ready(SeekdbHandleImpl *h, Process *spawned)
     }
 }
 
-/* Resolve the seekdb server binary path as "<libseekdb_client.so's dir>/seekdb"
+/* Resolve the seekdb server binary path as "<libseekdb_driver.so's dir>/seekdb"
  * (".exe" suffix on Windows). The binary is expected to ship alongside the
  * shared library — that's the wheel/install layout. Writes the result into
  * `buf` (NUL-terminated). Returns SEEKDB_SUCCESS or SEEKDB_INTERNAL_ERROR. */
 static int resolve_bin_path(char *buf, size_t buflen)
 {
     char dir[1024];
-    if (port_get_self_module_dir(dir, sizeof(dir)) != OK) return SEEKDB_INTERNAL_ERROR;
+    if (get_module_dir(dir, sizeof(dir)) != OK) return SEEKDB_INTERNAL_ERROR;
 #ifdef _WIN32
     int n = snprintf(buf, buflen, "%s\\seekdb.exe", dir);
 #else
@@ -228,7 +228,7 @@ int seekdb_open(const char *db_dir, int port, SeekdbHandle *out_handle)
     char bin_path[1024];
     if (resolve_bin_path(bin_path, sizeof(bin_path)) != SEEKDB_SUCCESS) {
         tlog("seekdb_open: cannot resolve seekdb binary "
-             "(set SEEKDB_BIN or place seekdb next to libseekdb_client)\n");
+             "(set SEEKDB_BIN or place seekdb next to libseekdb_driver)\n");
         return SEEKDB_INTERNAL_ERROR;
     }
 

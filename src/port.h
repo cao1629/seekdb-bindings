@@ -19,9 +19,6 @@ enum {
 
 typedef struct Flock Flock;        /* opaque file-lock handle */
 
-/* Spawned-process handle. `pid` is exposed for logging; `handle` is a
- * Win32 HANDLE managed exclusively by port_win32.c (kept as void* here
- * so consumers don't need <windows.h>). */
 typedef struct Process {
     int64_t pid;
 #ifdef _WIN32
@@ -119,7 +116,7 @@ int terminate_process(int64_t pid, int graceful);
 
 /*
  * Write the absolute path of the directory containing the binary that this
- * function is statically linked into (typically libseekdb_client.so when
+ * function is statically linked into (typically libseekdb_driver.so when
  * loaded as a shared library, or the executable when statically linked).
  * `buf` receives the path, NUL-terminated, no trailing slash. Returns OK
  * on success, ERR on failure (path too long, OS-call failure).
@@ -127,7 +124,7 @@ int terminate_process(int64_t pid, int graceful);
  * Used by seekdb_open to locate the seekdb server binary next to its own
  * shared library, so callers don't need to pass a bin_path.
  */
-int port_get_self_module_dir(char *buf, size_t buflen);
+int get_module_dir(char *buf, size_t buflen);
 
 /* ====================================================== filesystem ===== */
 

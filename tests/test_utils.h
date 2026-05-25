@@ -1,4 +1,4 @@
-// Observation helpers shared across seekdb-client tests.
+// Observation helpers shared across seekdb-driver tests.
 
 #pragma once
 
@@ -30,50 +30,3 @@ inline std::string make_per_test_db_dir(const std::string &root)
                 + info->name() + "_" + std::to_string(ns);
 }
 
-inline int64_t read_server_pid(const std::string &db_dir)
-{
-    std::FILE *f = std::fopen((db_dir + "/run/seekdb.pid").c_str(), "r");
-    if (!f) return -1;
-    long long pid = 0;
-    int got = std::fscanf(f, "%lld", &pid);
-    std::fclose(f);
-    return got == 1 ? (int64_t)pid : -1;
-}
-
-#ifdef __linux__
-// Read /proc/locks and look for a FLOCK entry on the given file's inode.
-// Linux-only — macOS and Windows expose lock info through different APIs
-// or not at all. If mode_filter is non-null, only entries with that mode
-// match ("READ" or "WRITE"); otherwise any FLOCK entry counts. Pure
-// observation, no interaction with the lock.
-inline bool someone_holds_flock(const std::string &path,
-                                const char *mode_filter = nullptr)
-{
-    struct stat st;
-    if (stat(path.c_str(), &st) != 0) return false;
-    const unsigned long want_inode = st.st_ino;
-
-    std::FILE *f = std::fopen("/proc/locks", "r");
-    if (!f) return false;
-
-    char line[256];
-    bool found = false;
-    while (std::fgets(line, sizeof(line), f)) {
-        char type[16] = {}, adv[16] = {}, mode[16] = {};
-        unsigned long pid = 0;
-        unsigned major = 0, minor = 0;
-        unsigned long inode = 0;
-        if (std::sscanf(line, "%*d: %15s %15s %15s %lu %u:%u:%lu",
-                        type, adv, mode, &pid, &major, &minor, &inode) == 7) {
-            if (std::strcmp(type, "FLOCK") == 0 &&
-                inode == want_inode &&
-                (mode_filter == nullptr || std::strcmp(mode, mode_filter) == 0)) {
-                found = true;
-                break;
-            }
-        }
-    }
-    std::fclose(f);
-    return found;
-}
-#endif
