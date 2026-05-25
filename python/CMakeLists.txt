@@ -37,7 +37,7 @@ find_package(pybind11 CONFIG REQUIRED)
 
 # ------ seekdb_driver: in-tree target (subdirectory) or prebuilt lib (standalone) ------
 if (SEEKDB_PYTHON_STANDALONE)
-    set(SEEKDB_CLIENT_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build" CACHE PATH
+    set(SEEKDB_CLIENT_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../c/build" CACHE PATH
         "Build dir containing the prebuilt seekdb_driver library and seekdb binary")
 
     set(_seekdb_lib_name "${CMAKE_SHARED_LIBRARY_PREFIX}seekdb_driver${CMAKE_SHARED_LIBRARY_SUFFIX}")
@@ -84,7 +84,7 @@ endif()
 pybind11_add_module(pylibseekdb src/bindings.cpp)
 
 target_include_directories(pylibseekdb PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/../include")
+    "${CMAKE_CURRENT_SOURCE_DIR}/../c/include")
 target_link_libraries(pylibseekdb PRIVATE
     "${_seekdb_driver_link}"
 )

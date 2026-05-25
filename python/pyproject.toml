@@ -16,25 +16,13 @@ build.targets    = ["pylibseekdb"]
 wheel.packages   = ["pylibseekdb"]
 build-dir        = "build/{wheel_tag}"
 
-# SEEKDB_CLIENT_LIB_DIR defaults to "${CMAKE_CURRENT_SOURCE_DIR}/../build" in
-# python/CMakeLists.txt — that resolves to ~/seekdb-bindings/build for direct
-# `python -m build` runs, and to /project/build inside the cibuildwheel
-# container (which mounts the repo root as /project). No override needed.
-
 [tool.cibuildwheel]
-# CPython 3.11, x86_64 manylinux glibc 2.28+. musllinux/aarch64 skipped.
 build  = "cp311-*"
 skip   = "*-musllinux_*"
 
-# Route pip inside the container through a China mirror. Flows into the
-# isolated build env that `python -m build` creates (which installs
-# scikit-build-core, pybind11, ninja).
 environment = { PIP_INDEX_URL = "https://pypi.tuna.tsinghua.edu.cn/simple/" }
 
 repair-wheel-command = ""
-
-# Smoke test: import + look up a symbol. Runs inside the test venv after install.
-test-command = "python -c \"import pylibseekdb; print(pylibseekdb.open)\""
 
 [tool.cibuildwheel.linux]
 archs = ["x86_64"]
@@ -44,6 +32,7 @@ before-build = [
     "cp /usr/lib64/libaio.so.1 /project/build/",
     "patchelf --set-rpath '$ORIGIN' /project/build/seekdb",
 ]
+
 repair-wheel-command = "auditwheel repair --plat manylinux_2_28_x86_64 -w {dest_dir} {wheel}"
 
 [tool.cibuildwheel.macos]

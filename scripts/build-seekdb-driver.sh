@@ -10,20 +10,11 @@ if [ ! -x "$SEEKDB_BIN" ]; then
     exit 1
 fi
 
-case "$(uname -s)" in
-    Linux)  PLATFORM=linux ;;
-    Darwin) PLATFORM=macos ;;
-    *) echo "error: unsupported OS $(uname -s)" >&2; exit 1 ;;
-esac
-
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-rm -rf c/build python/build python/wheelhouse
-
+rm -rf c/build
 cmake -S . -B c/build -DCMAKE_BUILD_TYPE=Release
-cmake --build c/build
+cmake --build c/build --target seekdb_driver
 
-python -m cibuildwheel --platform "$PLATFORM" --output-dir python/wheelhouse ./python
-
-ls -lh python/wheelhouse/
+find c/build -name "libseekdb_driver.*" -type f -exec ls -lh {} +
