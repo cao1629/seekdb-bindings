@@ -119,4 +119,8 @@ if (SEEKDB_PYTHON_STANDALONE)
     install(FILES "${SEEKDB_CLIENT_LIB_DIR}/libaio.so.1"
             DESTINATION pylibseekdb
             OPTIONAL)
+    if (WIN32)
+        file(GLOB _seekdb_runtime_dlls "${_seekdb_dir}/*.dll")
+        install(FILES ${_seekdb_runtime_dlls} DESTINATION pylibseekdb)
+    endif()
 endif()

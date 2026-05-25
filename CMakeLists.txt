@@ -106,6 +106,15 @@ if (SEEKDB_BIN)
     add_custom_command(TARGET seekdb_client POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${SEEKDB_BIN}" "$<TARGET_FILE_DIR:seekdb_client>")
+    if (WIN32)
+        get_filename_component(_seekdb_bin_dir "${SEEKDB_BIN}" DIRECTORY)
+        file(GLOB _seekdb_runtime_dlls "${_seekdb_bin_dir}/*.dll")
+        foreach(_dll ${_seekdb_runtime_dlls})
+            add_custom_command(TARGET seekdb_client POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${_dll}" "$<TARGET_FILE_DIR:seekdb_client>")
+        endforeach()
+    endif()
 endif()
 
 # ----------------------------------------------------------------------------
