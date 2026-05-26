@@ -19,11 +19,11 @@ esac
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-rm -rf c/build python/build python/wheelhouse
+rm -rf build
 
-cmake -S . -B c/build -DCMAKE_BUILD_TYPE=Release
-cmake --build c/build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSEEKDB_BUILD_PYTHON=OFF
+cmake --build build
 
-python -m cibuildwheel --platform "$PLATFORM" --output-dir python/wheelhouse ./python
+python -m cibuildwheel --platform "$PLATFORM" --output-dir build/wheelhouse ./python
 
-ls -lh python/wheelhouse/
+ls -lh build/wheelhouse/

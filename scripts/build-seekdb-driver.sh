@@ -13,8 +13,8 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-rm -rf c/build
-cmake -S . -B c/build -DCMAKE_BUILD_TYPE=Release
-cmake --build c/build --target seekdb_driver
+rm -rf build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSEEKDB_BUILD_PYTHON=OFF
+cmake --build build --target seekdb_driver seekdb_driver_static
 
-find c/build -name "libseekdb_driver.*" -type f -exec ls -lh {} +
+find build -name "libseekdb_driver.*" -type f -exec ls -lh {} +

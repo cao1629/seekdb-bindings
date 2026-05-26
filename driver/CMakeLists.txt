@@ -16,10 +16,8 @@ add_library(seekdb_driver_objs OBJECT
 target_include_directories(seekdb_driver_objs
     PUBLIC  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
             $<INSTALL_INTERFACE:include>
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
-            ${MARIADB_INCLUDE_DIRS})
-
-set_property(TARGET seekdb_driver_objs PROPERTY POSITION_INDEPENDENT_CODE ON)
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(seekdb_driver_objs PRIVATE mariadb_client)
 
 if (NOT MSVC)
     target_compile_options(seekdb_driver_objs PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -46,9 +44,8 @@ foreach(_t seekdb_driver seekdb_driver_static)
     target_include_directories(${_t}
         PUBLIC  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
                 $<INSTALL_INTERFACE:include>
-        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
-                ${MARIADB_INCLUDE_DIRS})
-    target_link_libraries(${_t} PRIVATE ${MARIADB_LIBRARY} Threads::Threads)
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(${_t} PRIVATE mariadb_client Threads::Threads)
 endforeach()
 
 if (SEEKDB_BIN)
@@ -73,24 +70,27 @@ endif()
 # CLI tool
 # ----------------------------------------------------------------------------
 
-add_executable(seekdb_cli src/seekdb_cli.c)
-target_include_directories(seekdb_cli PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${MARIADB_INCLUDE_DIRS})
-target_link_libraries(seekdb_cli PRIVATE seekdb_driver)
+if (SEEKDB_BUILD_CLI)
+    add_executable(seekdb_cli src/seekdb_cli.c)
+    target_include_directories(seekdb_cli PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(seekdb_cli PRIVATE seekdb_driver mariadb_client)
 
-if(APPLE)
-    set(_seekdb_origin "@loader_path")
-else()
-    set(_seekdb_origin "\$ORIGIN")
+    if(APPLE)
+        set(_seekdb_origin "@loader_path")
+    else()
+        set(_seekdb_origin "\$ORIGIN")
+    endif()
+    set_target_properties(seekdb_cli PROPERTIES
+        INSTALL_RPATH         "${_seekdb_origin}"
+        BUILD_RPATH           "${_seekdb_origin}"
+        BUILD_WITH_INSTALL_RPATH TRUE)
 endif()
-set_target_properties(seekdb_cli PROPERTIES
-    INSTALL_RPATH         "${_seekdb_origin}"
-    BUILD_RPATH           "${_seekdb_origin}"
-    BUILD_WITH_INSTALL_RPATH TRUE)
 
 # ----------------------------------------------------------------------------
 # Tests
 # ----------------------------------------------------------------------------
 
-add_subdirectory(tests)
+if (BUILD_TESTING)
+    add_subdirectory(tests)
+endif()

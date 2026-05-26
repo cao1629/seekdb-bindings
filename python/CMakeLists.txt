@@ -37,17 +37,17 @@ find_package(pybind11 CONFIG REQUIRED)
 
 # ------ seekdb_driver: in-tree target (subdirectory) or prebuilt lib (standalone) ------
 if (SEEKDB_PYTHON_STANDALONE)
-    set(SEEKDB_CLIENT_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../c/build" CACHE PATH
+    set(SEEKDB_DRIVER_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build" CACHE PATH
         "Build dir containing the prebuilt seekdb_driver library and seekdb binary")
 
     set(_seekdb_lib_name "${CMAKE_SHARED_LIBRARY_PREFIX}seekdb_driver${CMAKE_SHARED_LIBRARY_SUFFIX}")
     set(_seekdb_dir "")
     foreach(_cand
-            "${SEEKDB_CLIENT_LIB_DIR}"
-            "${SEEKDB_CLIENT_LIB_DIR}/Debug"
-            "${SEEKDB_CLIENT_LIB_DIR}/Release"
-            "${SEEKDB_CLIENT_LIB_DIR}/RelWithDebInfo"
-            "${SEEKDB_CLIENT_LIB_DIR}/MinSizeRel")
+            "${SEEKDB_DRIVER_LIB_DIR}"
+            "${SEEKDB_DRIVER_LIB_DIR}/Debug"
+            "${SEEKDB_DRIVER_LIB_DIR}/Release"
+            "${SEEKDB_DRIVER_LIB_DIR}/RelWithDebInfo"
+            "${SEEKDB_DRIVER_LIB_DIR}/MinSizeRel")
         if (EXISTS "${_cand}/${_seekdb_lib_name}")
             set(_seekdb_dir "${_cand}")
             break()
@@ -55,9 +55,9 @@ if (SEEKDB_PYTHON_STANDALONE)
     endforeach()
     if (_seekdb_dir STREQUAL "")
         message(FATAL_ERROR
-            "${_seekdb_lib_name} not found under ${SEEKDB_CLIENT_LIB_DIR} (or its Debug/Release subdirs).\n"
+            "${_seekdb_lib_name} not found under ${SEEKDB_DRIVER_LIB_DIR} (or its Debug/Release subdirs).\n"
             "Build the top-level project first, or pass\n"
-            "    -DSEEKDB_CLIENT_LIB_DIR=<path-to-build-dir>")
+            "    -DSEEKDB_DRIVER_LIB_DIR=<path-to-build-dir>")
     endif()
 
     set(_seekdb_driver_lib "${_seekdb_dir}/${_seekdb_lib_name}")
@@ -84,30 +84,33 @@ endif()
 pybind11_add_module(pylibseekdb src/bindings.cpp)
 
 target_include_directories(pylibseekdb PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/../c/include")
+    "${CMAKE_CURRENT_SOURCE_DIR}/../driver/include")
 target_link_libraries(pylibseekdb PRIVATE
     "${_seekdb_driver_link}"
 )
 
-# macOS dyld doesn't understand $ORIGIN; use @loader_path there.
 if(APPLE)
-    set(_seekdb_origin "@loader_path")
+    set(_seekdb_rpath "@loader_path")
 else()
-    set(_seekdb_origin "\$ORIGIN")
+    set(_seekdb_rpath "\$ORIGIN")
 endif()
 set_target_properties(pylibseekdb PROPERTIES
-    INSTALL_RPATH         "${_seekdb_origin}"
-    BUILD_RPATH           "${_seekdb_origin}"
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+    INSTALL_RPATH            "${_seekdb_rpath}"
+    BUILD_RPATH              "${_seekdb_rpath}"
     BUILD_WITH_INSTALL_RPATH TRUE
 )
 
-add_custom_command(TARGET pylibseekdb POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${_seekdb_driver_lib}" "$<TARGET_FILE_DIR:pylibseekdb>")
-if (_seekdb_bin)
+if (SEEKDB_PYTHON_STANDALONE)
     add_custom_command(TARGET pylibseekdb POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${_seekdb_bin}" "$<TARGET_FILE_DIR:pylibseekdb>")
+                "${_seekdb_driver_lib}" "$<TARGET_FILE_DIR:pylibseekdb>")
+    if (_seekdb_bin)
+        add_custom_command(TARGET pylibseekdb POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${_seekdb_bin}" "$<TARGET_FILE_DIR:pylibseekdb>")
+    endif()
 endif()
 
 if (SEEKDB_PYTHON_STANDALONE)
@@ -116,11 +119,25 @@ if (SEEKDB_PYTHON_STANDALONE)
             DESTINATION pylibseekdb)
     install(PROGRAMS "${_seekdb_bin}"
             DESTINATION pylibseekdb)
-    install(FILES "${SEEKDB_CLIENT_LIB_DIR}/libaio.so.1"
+    install(FILES "${SEEKDB_DRIVER_LIB_DIR}/libaio.so.1"
             DESTINATION pylibseekdb
             OPTIONAL)
     if (WIN32)
         file(GLOB _seekdb_runtime_dlls "${_seekdb_dir}/*.dll")
         install(FILES ${_seekdb_runtime_dlls} DESTINATION pylibseekdb)
     endif()
+endif()
+
+if (NOT SEEKDB_PYTHON_STANDALONE)
+    add_custom_target(wheel
+        COMMAND ${CMAKE_COMMAND} -E env
+                "SEEKDB_BIN=${SEEKDB_BIN}"
+                python -m cibuildwheel
+                --platform auto
+                --output-dir ${CMAKE_BINARY_DIR}/wheelhouse
+                ${CMAKE_SOURCE_DIR}/python
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS seekdb_driver
+        COMMENT "Building Python wheel via cibuildwheel"
+        VERBATIM)
 endif()

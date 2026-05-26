@@ -14,15 +14,13 @@ authors = [{ name = "cao1629" }]
 cmake.source-dir = "."
 build.targets    = ["pylibseekdb"]
 wheel.packages   = ["pylibseekdb"]
-build-dir        = "build/{wheel_tag}"
+build-dir        = "../build/python/{wheel_tag}"
 
 [tool.cibuildwheel]
 build  = "cp311-*"
 skip   = "*-musllinux_*"
 
 environment = { PIP_INDEX_URL = "https://pypi.tuna.tsinghua.edu.cn/simple/" }
-
-repair-wheel-command = ""
 
 [tool.cibuildwheel.linux]
 archs = ["x86_64"]
