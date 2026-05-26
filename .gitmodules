@@ -1,0 +1,10 @@
+[submodule "deps/mariadb-connector-c"]
+	path = deps/mariadb-connector-c
+	url = https://github.com/mariadb-corporation/mariadb-connector-c.git
+[submodule "deps/googletest"]
+	path = deps/googletest
+	url = https://github.com/google/googletest.git
+[submodule "deps/openssl"]
+	path = deps/openssl
+	url = https://github.com/openssl/openssl.git
+	shallow = true

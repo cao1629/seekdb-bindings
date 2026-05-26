@@ -1,0 +1,19 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": { "major": 3, "minor": 19, "patch": 0 },
+    "configurePresets": [
+        {
+            "name": "android",
+            "displayName": "Android arm64-v8a (NDK)",
+            "binaryDir": "${sourceDir}/build-android",
+            "toolchainFile": "${sourceDir}/cmake/android-arm64-toolchain.cmake",
+            "cacheVariables": {
+                "OPENSSL_ROOT_DIR": "${sourceDir}/build/openssl-android-build/install",
+                "SEEKDB_BIN":       "$env{SEEKDB_BIN}"
+            }
+        }
+    ],
+    "buildPresets": [
+        { "name": "android", "configurePreset": "android" }
+    ]
+}
