@@ -522,15 +522,13 @@ int seekdb_connect(SeekdbHandle handle, const char *database, bool autocommit,
                  h->sock_path, mysql_error(c->mysql));
 #endif
         }
-        mysql_close(c->mysql);
-        free(c);
+        *out_connection = (SeekdbConnection)c;
         return SEEKDB_INTERNAL_ERROR;
     }
 
     if (!autocommit) {
         if (mysql_real_query(c->mysql, "SET autocommit=0", 16)) {
-            mysql_close(c->mysql);
-            free(c);
+            *out_connection = (SeekdbConnection)c;
             return SEEKDB_INTERNAL_ERROR;
         }
     }

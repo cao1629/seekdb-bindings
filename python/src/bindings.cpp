@@ -94,24 +94,10 @@ public:
         int rc = seekdb_query(conn_->raw(), sql.c_str(),
                               static_cast<int64_t>(sql.size()), &result_);
         if (rc != SEEKDB_SUCCESS) {
-            // libseekdb_driver collapses every server-side failure into
-            // SEEKDB_INTERNAL_ERROR (-1). Pull the real MySQL/OB errno +
-            // message off the connection so callers (and pyseekdb's
-            // "is this a table-missing error?" heuristic) get a useful
-            // signal instead of bare "code=-1".
             int srv_errno = 0;
             const char *srv_msg = nullptr;
             seekdb_last_error(conn_->raw(), &srv_errno, &srv_msg);
-            std::string m = "seekdb_query failed: rc=" + std::to_string(rc);
-            if (srv_errno != 0 || (srv_msg && *srv_msg)) {
-                m += ", server_errno=" + std::to_string(srv_errno);
-                if (srv_msg && *srv_msg) { m += ", server_msg="; m += srv_msg; }
-            }
-            m += ", sql=";
-            // Cap SQL at 500 chars so a huge INSERT doesn't blow up the message.
-            if (sql.size() > 500) { m.append(sql, 0, 500); m += "..."; }
-            else                  { m += sql; }
-            throw SeekdbError(rc, std::move(m));
+            throw SeekdbError(srv_errno, srv_msg ? srv_msg : "");
         }
         int64_t n = 0;
         if (seekdb_result_row_count(result_, &n) != SEEKDB_SUCCESS) n = 0;
@@ -228,7 +214,15 @@ std::shared_ptr<Connection> connect(const std::string &database, bool autocommit
             "seekdb not opened — call open() or open_with_service() first");
     }
     SeekdbConnection c = nullptr;
-    SDB_CHECK(seekdb_connect(handle, database.c_str(), autocommit, &c));
+    int rc = seekdb_connect(handle, database.c_str(), autocommit, &c);
+    if (rc != SEEKDB_SUCCESS) {
+        int srv_errno = 0;
+        const char *srv_msg = nullptr;
+        if (c) seekdb_last_error(c, &srv_errno, &srv_msg);
+        std::string msg = (srv_msg && *srv_msg) ? srv_msg : "seekdb_connect failed";
+        if (c) seekdb_disconnect(c);
+        throw SeekdbError(srv_errno, msg);
+    }
     return std::make_shared<Connection>(c);
 }
 
