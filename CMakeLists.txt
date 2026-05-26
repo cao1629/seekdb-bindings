@@ -26,9 +26,7 @@ endif()
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-option(SEEKDB_BUILD_PYTHON "Build the pylibseekdb Python extension"      ON)
-option(SEEKDB_BUILD_CLI    "Build the seekdb_cli executable"             ON)
-option(SEEKDB_ENABLE_LOG   "Enable tlog() debug prints in seekdb_driver" OFF)
+option(SEEKDB_DRIVER_ENABLE_LOG "Enable tlog() debug prints in seekdb_driver" OFF)
 
 set(SEEKDB_BIN "$ENV{SEEKDB_BIN}" CACHE FILEPATH "Path to the seekdb server binary")
 
@@ -50,14 +48,9 @@ target_include_directories(mariadb_client INTERFACE
     "${CMAKE_CURRENT_BINARY_DIR}/deps/mariadb-connector-c/include")
 target_link_libraries(mariadb_client INTERFACE mariadbclient)
 
-if (BUILD_TESTING)
-    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-    add_subdirectory(deps/googletest EXCLUDE_FROM_ALL)
-    include(GoogleTest)
-endif()
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+add_subdirectory(deps/googletest EXCLUDE_FROM_ALL)
+include(GoogleTest)
 
 add_subdirectory(driver)
-
-if (SEEKDB_BUILD_PYTHON)
-    add_subdirectory(python)
-endif()
+add_subdirectory(python)

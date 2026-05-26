@@ -27,8 +27,8 @@ if (NOT WIN32)
     target_compile_definitions(seekdb_driver_objs PRIVATE _GNU_SOURCE)
 endif()
 
-if (SEEKDB_ENABLE_LOG)
-    target_compile_definitions(seekdb_driver_objs PRIVATE SEEKDB_ENABLE_LOG)
+if (SEEKDB_DRIVER_ENABLE_LOG)
+    target_compile_definitions(seekdb_driver_objs PRIVATE SEEKDB_DRIVER_ENABLE_LOG)
 endif()
 
 add_library(seekdb_driver        SHARED $<TARGET_OBJECTS:seekdb_driver_objs>)
@@ -70,27 +70,23 @@ endif()
 # CLI tool
 # ----------------------------------------------------------------------------
 
-if (SEEKDB_BUILD_CLI)
-    add_executable(seekdb_cli src/seekdb_cli.c)
-    target_include_directories(seekdb_cli PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_link_libraries(seekdb_cli PRIVATE seekdb_driver mariadb_client)
+add_executable(seekdb_cli src/seekdb_cli.c)
+target_include_directories(seekdb_cli PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(seekdb_cli PRIVATE seekdb_driver mariadb_client)
 
-    if(APPLE)
-        set(_seekdb_origin "@loader_path")
-    else()
-        set(_seekdb_origin "\$ORIGIN")
-    endif()
-    set_target_properties(seekdb_cli PROPERTIES
-        INSTALL_RPATH         "${_seekdb_origin}"
-        BUILD_RPATH           "${_seekdb_origin}"
-        BUILD_WITH_INSTALL_RPATH TRUE)
+if(APPLE)
+    set(_seekdb_origin "@loader_path")
+else()
+    set(_seekdb_origin "\$ORIGIN")
 endif()
+set_target_properties(seekdb_cli PROPERTIES
+    INSTALL_RPATH         "${_seekdb_origin}"
+    BUILD_RPATH           "${_seekdb_origin}"
+    BUILD_WITH_INSTALL_RPATH TRUE)
 
 # ----------------------------------------------------------------------------
 # Tests
 # ----------------------------------------------------------------------------
 
-if (BUILD_TESTING)
-    add_subdirectory(tests)
-endif()
+add_subdirectory(tests)

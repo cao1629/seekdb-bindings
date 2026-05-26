@@ -3,15 +3,15 @@
 #include <stdio.h>
 
 /* Timestamped debug print. Format: [HH:MM:SS.mmm T=<tid>] ...
- * Compile-gated via SEEKDB_ENABLE_LOG — when not defined, tlog(...) expands
+ * Compile-gated via SEEKDB_DRIVER_ENABLE_LOG — when not defined, tlog(...) expands
  * to a sizeof(printf(...)) probe: arguments are not evaluated (sizeof never
  * evaluates its operand for non-VLA expressions) but the compiler still sees
  * them as "used", suppressing log-only unused-variable warnings.
  *
  * Enable from the top-level build with:
- *     cmake -B build -DSEEKDB_ENABLE_LOG=ON
+ *     cmake -B build -DSEEKDB_DRIVER_ENABLE_LOG=ON
  */
-#ifdef SEEKDB_ENABLE_LOG
+#ifdef SEEKDB_DRIVER_ENABLE_LOG
 
 #include <stdarg.h>
 #include <stdint.h>
@@ -65,7 +65,7 @@ static inline void tlog(const char *fmt, ...)
     fputs(buf, stdout);
 }
 
-#else  /* SEEKDB_ENABLE_LOG not defined */
+#else  /* SEEKDB_DRIVER_ENABLE_LOG not defined */
 
 #define tlog(...) ((void)sizeof(printf(__VA_ARGS__)))
 
