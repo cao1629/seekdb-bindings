@@ -21,6 +21,12 @@
 #define WAIT_INTERVAL_US    (200 * 1000)   /* 200 ms between try_connect polls */
 #define REAPER_INTERVAL_US  (500 * 1000)   /* 500 ms between reaper wakeups */
 
+#if defined(__GNUC__) || defined(__clang__)
+#define MAYBE_UNUSED __attribute__((unused))
+#else
+#define MAYBE_UNUSED
+#endif
+
 /* ============================================================ reaper ====== */
 
 typedef struct ProcessNode {
@@ -109,7 +115,7 @@ static BOOL CALLBACK start_reaper_cb(PINIT_ONCE o, PVOID p, PVOID *c)
     if (h) CloseHandle(h);
     return TRUE;
 }
-__attribute__((unused))
+MAYBE_UNUSED
 static void start_reaper(void)
 {
     InitOnceExecuteOnce(&g_reaper_once, start_reaper_cb, NULL, NULL);
@@ -128,7 +134,7 @@ static void start_reaper_once_cb(void)
         pthread_detach(tid);
     }
 }
-__attribute__((unused))
+MAYBE_UNUSED
 static void start_reaper(void)
 {
     pthread_once(&g_reaper_once, start_reaper_once_cb);
