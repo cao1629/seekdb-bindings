@@ -1,19 +1,3 @@
-/*
- * port.cc — POSIX and Win32 backends for src/port.h.
- *
- * Whole file is conditionally compiled per platform: Win32 uses
- * LockFileEx / CreateProcess / TerminateProcess; POSIX uses flock /
- * posix_spawn / waitpid / kill.
- *
- * Notes (Win32):
- *   - The `graceful` flag on terminate_process is ignored — Windows
- *     TerminateProcess is always a hard kill. Implementing graceful
- *     would require Ctrl+C event delivery (console children only) or
- *     WM_CLOSE (GUI children only); neither fits a generic daemon.
- *   - Locks cover the entire file (offset 0, length 2^64-1), matching
- *     POSIX flock's whole-file semantics.
- */
-
 #include "port.h"
 #include "tlog.h"
 
@@ -55,8 +39,7 @@ int flock_open(const char *path, Flock **out_flock)
 }
 
 /* Returns 1 if the lock was acquired, 0 otherwise. On a blocking call,
- * logs the OS error if LockFileEx returned FALSE (try-acquire stays
- * silent — failure there is the expected "couldn't get it" path). */
+ * logs the OS error if LockFileEx returned FALSE. */
 static int do_lock(Flock *lock, FlockMode mode, int blocking)
 {
     DWORD flags = (mode == FLOCK_EXCLUSIVE) ? LOCKFILE_EXCLUSIVE_LOCK : 0;
@@ -128,12 +111,6 @@ int flock_close(Flock *lock)
 
 /* ===================================================== Process ====== */
 
-/*
- * Build a Windows command line from argv. CreateProcess wants a single
- * mutable string; this is the simplest reliable encoding (each arg
- * wrapped in double quotes, no embedded-quote handling — sufficient
- * for the seekdb daemon's known-clean argv).
- */
 static char *build_cmdline(char *const argv[])
 {
     size_t total = 0;
@@ -159,8 +136,6 @@ int spawn_process(const char *bin_path, char *const argv[], Process **out_proc)
     if (!bin_path || !argv || !out_proc) return ERR_INVALID_ARG;
     *out_proc = NULL;
 
-    /* Confirm the binary actually exists; CreateProcessA's "file not
-       found" failure mode looks identical to other errors otherwise. */
     DWORD attr = GetFileAttributesA(bin_path);
     if (attr == INVALID_FILE_ATTRIBUTES) {
         tlog("spawn_process: bin_path '%s' not accessible: GetFileAttributesA error %lu\n",
@@ -175,19 +150,37 @@ int spawn_process(const char *bin_path, char *const argv[], Process **out_proc)
 
     tlog("spawn_process: bin='%s'\n", bin_path);
 
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof(sa);
+    sa.lpSecurityDescriptor = NULL;
+    sa.bInheritHandle = TRUE;
+    HANDLE h_nul_in  = CreateFileA("NUL", GENERIC_READ,  FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                   &sa, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    HANDLE h_nul_out = CreateFileA("NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                   &sa, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    HANDLE h_nul_err = CreateFileA("NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                   &sa, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
     memset(&si, 0, sizeof(si));
     memset(&pi, 0, sizeof(pi));
     si.cb = sizeof(si);
+    si.dwFlags |= STARTF_USESTDHANDLES;
+    si.hStdInput  = h_nul_in;
+    si.hStdOutput = h_nul_out;
+    si.hStdError  = h_nul_err;
 
     BOOL ok = CreateProcessA(bin_path,
                              cmd,
                              NULL, NULL,
-                             FALSE,           /* don't inherit handles */
+                             TRUE,            /* inherit (for NUL handles) */
                              0,
                              NULL, NULL,
                              &si, &pi);
+    CloseHandle(h_nul_in);
+    CloseHandle(h_nul_out);
+    CloseHandle(h_nul_err);
     free(cmd);
     if (!ok) {
         DWORD err = GetLastError();
@@ -250,19 +243,18 @@ int terminate_process(int64_t pid, int graceful)
     return ok ? OK : ERR;
 }
 
-int port_get_self_module_dir(char *buf, size_t buflen)
+int get_module_dir(char *buf, size_t buflen)
 {
     if (!buf || buflen == 0) return ERR_INVALID_ARG;
     HMODULE mod = NULL;
     if (!GetModuleHandleExA(
             GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
             GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-            (LPCSTR)&port_get_self_module_dir, &mod) || mod == NULL) {
+            (LPCSTR)&get_module_dir, &mod) || mod == NULL) {
         return ERR;
     }
     DWORD n = GetModuleFileNameA(mod, buf, (DWORD)buflen);
     if (n == 0 || n >= buflen) return ERR;
-    /* strip basename */
     for (char *p = buf + n; p > buf; --p) {
         if (*p == '\\' || *p == '/') { *p = '\0'; return OK; }
     }
@@ -281,8 +273,8 @@ int ensure_dir(const char *path)
 
 #else /* POSIX */
 
-#include <errno.h>
 #include <dlfcn.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <signal.h>
@@ -362,8 +354,16 @@ int spawn_process(const char *bin_path, char *const argv[], Process **out_proc)
     *out_proc = NULL;
 
     Process *p = (Process *)malloc(sizeof(Process));
+
+    posix_spawn_file_actions_t fa;
+    posix_spawn_file_actions_init(&fa);
+    posix_spawn_file_actions_addopen(&fa, STDIN_FILENO,  "/dev/null", O_RDONLY, 0);
+    posix_spawn_file_actions_addopen(&fa, STDOUT_FILENO, "/dev/null", O_WRONLY, 0);
+    posix_spawn_file_actions_addopen(&fa, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
+
     pid_t pid;
-    int err = posix_spawn(&pid, bin_path, NULL, NULL, argv, NULL);
+    int err = posix_spawn(&pid, bin_path, &fa, NULL, argv, NULL);
+    posix_spawn_file_actions_destroy(&fa);
     if (err != 0) {
         tlog("spawn_process: posix_spawn(%s) failed: errno %d: %s\n",
              bin_path, err, strerror(err));
@@ -383,9 +383,7 @@ int reap_process(Process *proc)
 }
 
 int is_server_reaped(int64_t pid) {
-    /* If the pid is a zombie child of this process, waitpid reaps it now;
-     * otherwise it returns 0 (still running) or -1 (not our child / gone). */
-    waitpid((pid_t)pid, NULL, WNOHANG);
+    tlog("is_server_reaped: pid = %lld\n", (long long)pid);
     return kill((pid_t)pid, 0) == 0 ? 0 : 1;
 }
 
@@ -400,22 +398,20 @@ int terminate_process(int64_t pid, int graceful)
     return OK;
 }
 
-int port_get_self_module_dir(char *buf, size_t buflen)
+int get_module_dir(char *buf, size_t buflen)
 {
     if (!buf || buflen == 0) return ERR_INVALID_ARG;
     Dl_info info;
-    if (dladdr((void *)&port_get_self_module_dir, &info) == 0 ||
+    if (dladdr((void *)&get_module_dir, &info) == 0 ||
         info.dli_fname == NULL) {
         return ERR;
     }
-    /* dli_fname may be relative — resolve to absolute. */
     char abs[PATH_MAX];
     const char *src = realpath(info.dli_fname, abs) ? abs : info.dli_fname;
     size_t n = strlen(src);
     if (n >= buflen) return ERR;
     memcpy(buf, src, n);
     buf[n] = '\0';
-    /* strip basename */
     for (char *p = buf + n; p > buf; --p) {
         if (*p == '/') { *p = '\0'; return OK; }
     }

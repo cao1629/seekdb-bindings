@@ -3,80 +3,153 @@
 #include "port.h"
 #include "tlog.h"
 
-#include <cerrno>
-#include <chrono>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <list>
-#include <mutex>
-#include <thread>
+#include <errno.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <pthread.h>
+#include <unistd.h>
+#endif
 
 #include <mysql.h>
 
 #define WAIT_INTERVAL_US    (200 * 1000)   /* 200 ms between try_connect polls */
 #define REAPER_INTERVAL_US  (500 * 1000)   /* 500 ms between reaper wakeups */
 
-/* When port == 0 the client picks the platform-native local transport:
- * POSIX → Unix-domain socket at h->sock_path. Windows → named pipe whose
- * suffix the server writes to <db_dir>/run/sql.pipe (per-instance:
- * <pid>-<timestamp>). The client reads that file lazily on first
- * try_connect once the server has started. libmariadb prepends \\.\pipe\
- * internally so we only ever pass the suffix. */
+#if defined(__GNUC__) || defined(__clang__)
+#define MAYBE_UNUSED __attribute__((unused))
+#else
+#define MAYBE_UNUSED
+#endif
 
-/* Set of spawned servers this process has not yet reaped.
- * A single client process may open multiple seekdb instances (distinct
- * db-dirs), each spawning its own server/ */
-namespace {
+/* ============================================================ reaper ====== */
 
-std::mutex             g_spawned_mu;
-std::list<Process *>   g_spawned;
-std::once_flag         g_reaper_once;
+typedef struct ProcessNode {
+    Process            *proc;
+    struct ProcessNode *next;
+} ProcessNode;
 
-void spawned_add(Process *proc)
+static ProcessNode *g_spawned = NULL;
+
+#ifdef _WIN32
+
+static CRITICAL_SECTION g_spawned_mu;
+static INIT_ONCE        g_mu_init     = INIT_ONCE_STATIC_INIT;
+static INIT_ONCE        g_reaper_once = INIT_ONCE_STATIC_INIT;
+
+static BOOL CALLBACK init_mu_cb(PINIT_ONCE o, PVOID p, PVOID *c)
 {
-    std::lock_guard<std::mutex> lk(g_spawned_mu);
-    g_spawned.push_back(proc);
+    (void)o; (void)p; (void)c;
+    InitializeCriticalSection(&g_spawned_mu);
+    return TRUE;
+}
+static void lock_spawned(void)
+{
+    InitOnceExecuteOnce(&g_mu_init, init_mu_cb, NULL, NULL);
+    EnterCriticalSection(&g_spawned_mu);
+}
+static void unlock_spawned(void) { LeaveCriticalSection(&g_spawned_mu); }
+static void sleep_us(unsigned us) { Sleep(us / 1000); }
+
+#else  /* POSIX */
+
+static pthread_mutex_t g_spawned_mu  = PTHREAD_MUTEX_INITIALIZER;
+static pthread_once_t  g_reaper_once = PTHREAD_ONCE_INIT;
+
+static void lock_spawned(void)   { pthread_mutex_lock(&g_spawned_mu); }
+static void unlock_spawned(void) { pthread_mutex_unlock(&g_spawned_mu); }
+static void sleep_us(unsigned us) { usleep(us); }
+
+#endif
+
+static void spawned_add(Process *proc)
+{
+    ProcessNode *node = (ProcessNode *)malloc(sizeof(*node));
+    if (!node) return;
+    node->proc = proc;
+    lock_spawned();
+    node->next = g_spawned;
+    g_spawned  = node;
+    unlock_spawned();
 }
 
 /* Background thread that wait_nonblocks each spawned server once it
- * exits, preventing zombies. Started lazily on the first successful
- * spawn via std::call_once. */
-void reaper_loop()
+ * exits, preventing zombies. Started lazily on the first successful spawn. */
+static void reaper_loop_body(void)
 {
     for (;;) {
-        {
-            std::lock_guard<std::mutex> lk(g_spawned_mu);
-            for (auto it = g_spawned.begin(); it != g_spawned.end(); ) {
-                if (reap_process(*it) == 1) {
-                    tlog("reaper: reaped pid %lld\n", (long long)(*it)->pid);
-                    free(*it);
-                    it = g_spawned.erase(it);
-                } else {
-                    ++it;
-                }
+        lock_spawned();
+        ProcessNode **pp = &g_spawned;
+        while (*pp) {
+            ProcessNode *cur = *pp;
+            if (reap_process(cur->proc) == 1) {
+                tlog("reaper: reaped pid %lld\n", (long long)cur->proc->pid);
+                free(cur->proc);
+                *pp = cur->next;
+                free(cur);
+            } else {
+                pp = &cur->next;
             }
         }
-        std::this_thread::sleep_for(std::chrono::microseconds(REAPER_INTERVAL_US));
+        unlock_spawned();
+        sleep_us(REAPER_INTERVAL_US);
     }
 }
 
-void start_reaper()
+#ifdef _WIN32
+static DWORD WINAPI reaper_loop_win(LPVOID p)
 {
-    std::thread(reaper_loop).detach();
+    (void)p;
+    reaper_loop_body();
+    return 0;
 }
-
-}  /* anonymous namespace */
+static BOOL CALLBACK start_reaper_cb(PINIT_ONCE o, PVOID p, PVOID *c)
+{
+    (void)o; (void)p; (void)c;
+    HANDLE h = CreateThread(NULL, 0, reaper_loop_win, NULL, 0, NULL);
+    if (h) CloseHandle(h);
+    return TRUE;
+}
+MAYBE_UNUSED
+static void start_reaper(void)
+{
+    InitOnceExecuteOnce(&g_reaper_once, start_reaper_cb, NULL, NULL);
+}
+#else
+static void *reaper_loop_posix(void *arg)
+{
+    (void)arg;
+    reaper_loop_body();
+    return NULL;
+}
+static void start_reaper_once_cb(void)
+{
+    pthread_t tid;
+    if (pthread_create(&tid, NULL, reaper_loop_posix, NULL) == 0) {
+        pthread_detach(tid);
+    }
+}
+MAYBE_UNUSED
+static void start_reaper(void)
+{
+    pthread_once(&g_reaper_once, start_reaper_once_cb);
+}
+#endif
 
 static char *xstrdup(const char *s)
 {
-    if (!s) return nullptr;
-    size_t n = std::strlen(s) + 1;
-    char *p = (char *)std::malloc(n);
-    if (p) std::memcpy(p, s, n);
+    if (!s) return NULL;
+    size_t n = strlen(s) + 1;
+    char *p = (char *)malloc(n);
+    if (p) memcpy(p, s, n);
     return p;
 }
-static void xfree(void *p) { if (p) std::free(p); }
+static void xfree(void *p) { if (p) free(p); }
 
 /* ============================================================ utils ====== */
 
@@ -102,7 +175,7 @@ static int read_pipe_name(SeekdbHandleImpl *h)
         tlog("read_pipe_name: fgets(%s) returned NULL (empty file?)\n", h->pipe_file_path);
         return 0;
     }
-    size_t n = std::strlen(buf);
+    size_t n = strlen(buf);
     while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r')) buf[--n] = '\0';
     if (n == 0) {
         tlog("read_pipe_name: %s contained only whitespace\n", h->pipe_file_path);
@@ -125,6 +198,7 @@ static int try_connect(SeekdbHandleImpl *h)
     char no_ssl = 0;
     mysql_options(m, MYSQL_OPT_SSL_ENFORCE,            &no_ssl);
     mysql_options(m, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &no_ssl);
+    mysql_options(m, MYSQL_SET_CHARSET_NAME, "utf8mb4");
 
     const bool use_tcp = h->port != 0;
 #ifdef _WIN32
@@ -208,18 +282,18 @@ static int wait_for_ready(SeekdbHandleImpl *h, Process *spawned)
             return -1;
         }
 
-        std::this_thread::sleep_for(std::chrono::microseconds(WAIT_INTERVAL_US));
+        sleep_us(WAIT_INTERVAL_US);
     }
 }
 
-/* Resolve the seekdb server binary path as "<libseekdb_client.so's dir>/seekdb"
+/* Resolve the seekdb server binary path as "<libseekdb_driver.so's dir>/seekdb"
  * (".exe" suffix on Windows). The binary is expected to ship alongside the
  * shared library — that's the wheel/install layout. Writes the result into
  * `buf` (NUL-terminated). Returns SEEKDB_SUCCESS or SEEKDB_INTERNAL_ERROR. */
 static int resolve_bin_path(char *buf, size_t buflen)
 {
     char dir[1024];
-    if (port_get_self_module_dir(dir, sizeof(dir)) != OK) return SEEKDB_INTERNAL_ERROR;
+    if (get_module_dir(dir, sizeof(dir)) != OK) return SEEKDB_INTERNAL_ERROR;
 #ifdef _WIN32
     int n = snprintf(buf, buflen, "%s\\seekdb.exe", dir);
 #else
@@ -237,7 +311,7 @@ int seekdb_open(const char *db_dir, int port, SeekdbHandle *out_handle)
     char bin_path[1024];
     if (resolve_bin_path(bin_path, sizeof(bin_path)) != SEEKDB_SUCCESS) {
         tlog("seekdb_open: cannot resolve seekdb binary "
-             "(set SEEKDB_BIN or place seekdb next to libseekdb_client)\n");
+             "(set SEEKDB_BIN or place seekdb next to libseekdb_driver)\n");
         return SEEKDB_INTERNAL_ERROR;
     }
 
@@ -318,8 +392,10 @@ int seekdb_open(const char *db_dir, int port, SeekdbHandle *out_handle)
     char base_dir_arg[512];
     snprintf(base_dir_arg, sizeof(base_dir_arg), "--base-dir=%s", db_dir);
     char *argv[] = {(char *)bin_path, base_dir_arg,
-                    (char *)"--port=2991",
-                    (char *)"--embedded", (char *)"--nodaemon", NULL};
+                    (char *)"--embedded", (char *)"--nodaemon",
+                    (char *)"--parameter", (char *)"memory_limit=1G",
+                    (char *)"--parameter", (char *)"log_disk_size=2G",
+                    NULL};
     if (spawn_process(bin_path, argv, &spawned) != OK) {
         flock_close(startup_lock);
         flock_close(h->clients_lock);
@@ -354,7 +430,7 @@ int seekdb_open(const char *db_dir, int port, SeekdbHandle *out_handle)
     /* Register the spawned process with the background reaper so it
      * gets reaped once the server exits. Start the reaper lazily. */
     spawned_add(spawned);
-    // std::call_once(g_reaper_once, start_reaper);
+    // start_reaper();
 
     tlog("seekdb_open: success (spawned pid = %lld)\n", (long long)spawned_pid);
     *out_handle = (SeekdbHandle)h;
@@ -414,6 +490,7 @@ int seekdb_connect(SeekdbHandle handle, const char *database, bool autocommit,
         mysql_options(c->mysql, MYSQL_OPT_SSL_ENFORCE,            &no_ssl);
         mysql_options(c->mysql, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &no_ssl);
     }
+    mysql_options(c->mysql, MYSQL_SET_CHARSET_NAME, "utf8mb4");
 #ifdef _WIN32
     if (!use_tcp) {
         mysql_options(c->mysql, MYSQL_OPT_NAMED_PIPE, NULL);
@@ -451,15 +528,13 @@ int seekdb_connect(SeekdbHandle handle, const char *database, bool autocommit,
                  h->sock_path, mysql_error(c->mysql));
 #endif
         }
-        mysql_close(c->mysql);
-        free(c);
+        *out_connection = (SeekdbConnection)c;
         return SEEKDB_INTERNAL_ERROR;
     }
 
     if (!autocommit) {
         if (mysql_real_query(c->mysql, "SET autocommit=0", 16)) {
-            mysql_close(c->mysql);
-            free(c);
+            *out_connection = (SeekdbConnection)c;
             return SEEKDB_INTERNAL_ERROR;
         }
     }
@@ -475,6 +550,16 @@ int seekdb_disconnect(SeekdbConnection connection)
     SeekdbConnectionImpl *c = (SeekdbConnectionImpl *)connection;
     if (c->mysql) mysql_close(c->mysql);
     free(c);
+    return SEEKDB_SUCCESS;
+}
+
+int seekdb_last_error(SeekdbConnection connection, int *out_errno,
+                      const char **out_msg)
+{
+    if (!connection) return SEEKDB_INVALID_ARGUMENT;
+    SeekdbConnectionImpl *c = (SeekdbConnectionImpl *)connection;
+    if (out_errno) *out_errno = c->mysql ? (int)mysql_errno(c->mysql) : 0;
+    if (out_msg)   *out_msg   = c->mysql ? mysql_error(c->mysql) : "";
     return SEEKDB_SUCCESS;
 }
 
