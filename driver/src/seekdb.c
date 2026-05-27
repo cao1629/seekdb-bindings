@@ -203,7 +203,7 @@ static int try_connect(SeekdbHandleImpl *h)
     const bool use_tcp = h->port != 0;
 #ifdef _WIN32
     if (!use_tcp) {
-        if (h->pipe_name[0] == '\0' && !read_pipe_name(h)) {
+        if (!read_pipe_name(h)) {
             tlog("try_connect: %s not readable yet\n", h->pipe_file_path);
             mysql_close(m);
             return 0;
