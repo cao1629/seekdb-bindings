@@ -1,15 +1,3 @@
-#!/usr/bin/env bash
-#
-# Cross-compile OpenSSL for Android arm64-v8a from the vendored
-# deps/openssl submodule. Output goes to build/openssl-android-build/install/,
-# which the `android` preset in CMakePresets.json reads as OPENSSL_ROOT_DIR.
-#
-# Run once after `git submodule update --init`. Re-run only when the
-# OpenSSL submodule pin changes.
-#
-# Requires:
-#   ANDROID_NDK_HOME — pointing at an installed Android NDK.
-
 set -euo pipefail
 
 cd "$(dirname "$0")/.."   # project root

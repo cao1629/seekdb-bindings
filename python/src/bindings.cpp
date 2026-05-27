@@ -34,6 +34,8 @@ public:
     SeekdbError(int code, const char *where)
         : std::runtime_error(std::string(where) + " failed: code=" + std::to_string(code)),
           code_(code) {}
+    SeekdbError(int code, std::string msg)
+        : std::runtime_error(std::move(msg)), code_(code) {}
     int code() const { return code_; }
 private:
     int code_;
@@ -89,8 +91,14 @@ public:
             throw std::runtime_error("Cursor.execute: no connection");
         }
         free_result();
-        SDB_CHECK(seekdb_query(conn_->raw(), sql.c_str(),
-                               static_cast<int64_t>(sql.size()), &result_));
+        int rc = seekdb_query(conn_->raw(), sql.c_str(),
+                              static_cast<int64_t>(sql.size()), &result_);
+        if (rc != SEEKDB_SUCCESS) {
+            int srv_errno = 0;
+            const char *srv_msg = nullptr;
+            seekdb_last_error(conn_->raw(), &srv_errno, &srv_msg);
+            throw SeekdbError(srv_errno, srv_msg ? srv_msg : "");
+        }
         int64_t n = 0;
         if (seekdb_result_row_count(result_, &n) != SEEKDB_SUCCESS) n = 0;
         return static_cast<uint64_t>(n);
@@ -206,7 +214,15 @@ std::shared_ptr<Connection> connect(const std::string &database, bool autocommit
             "seekdb not opened — call open() or open_with_service() first");
     }
     SeekdbConnection c = nullptr;
-    SDB_CHECK(seekdb_connect(handle, database.c_str(), autocommit, &c));
+    int rc = seekdb_connect(handle, database.c_str(), autocommit, &c);
+    if (rc != SEEKDB_SUCCESS) {
+        int srv_errno = 0;
+        const char *srv_msg = nullptr;
+        if (c) seekdb_last_error(c, &srv_errno, &srv_msg);
+        std::string msg = (srv_msg && *srv_msg) ? srv_msg : "seekdb_connect failed";
+        if (c) seekdb_disconnect(c);
+        throw SeekdbError(srv_errno, msg);
+    }
     return std::make_shared<Connection>(c);
 }
 
@@ -221,7 +237,7 @@ void close() {
 
 
 PYBIND11_MODULE(pylibseekdb, m) {
-    m.doc() = "Python bindings for seekdb-client (out-of-process MySQL-compatible client). "
+    m.doc() = "Python bindings for seekdb-driver (out-of-process MySQL-compatible client). "
               "Surface mirrors seekdb's ob_embed_impl.cpp.";
     m.attr("__version__") = "0.1.0";
 
