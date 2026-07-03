@@ -1,14 +1,14 @@
 # seekdb-bindings
 
-C driver library, CLI, and Python bindings for [seekdb](https://github.com/oceanbase/seekdb).
+C library, CLI, and Python bindings for [seekdb](https://github.com/oceanbase/seekdb).
 
-The core shared library (`libseekdb_driver`) is implemented in **C11** (`driver/src/*.c`) and does not link against `libstdc++` or `libc++` (checked in CI via `readelf`); embedders only need a C toolchain and pthreads at runtime. The CLI (`seekdb_cli`) is also implemented in C11 (`driver/src/seekdb_cli.c`). The bundled **seekdb server binary** is a separate C++ product and may depend on `libstdc++`; issue #6 applies only to `libseekdb_driver`. C++ is also used for gtest-based integration tests and the optional pybind11 Python extension.
+The core shared library (`libseekdb`, with a `libseekdb_driver` compatibility symlink) is implemented in **C11** (`lib/src/*.c`) and does not link against `libstdc++` or `libc++` (checked in CI via `readelf`); embedders only need a C toolchain to build and pthreads at runtime. The CLI (`seekdb_cli`) is also implemented in C11 (`lib/src/seekdb_cli.c`). The bundled **seekdb server binary** is a separate C++ product and may depend on `libstdc++`; issue #6 applies only to `libseekdb`. C++ is also used for gtest-based integration tests and the optional pybind11 Python extension.
 
 ## Layout
 
 ```
 seekdb-bindings/
-├── driver/
+├── lib/
 │   ├── include/seekdb.h        public C API
 │   ├── src/                    library + CLI sources
 │   └── tests/                  gtest cases
@@ -34,16 +34,16 @@ git submodule update --init --recursive
 
 ## Build
 
-All builds go to a single CMake build directory — `build/` at the repo root by convention, but any location works. The `SEEKDB_BIN` env var must point to a built `seekdb` binary — it's copied next to `libseekdb_driver.so` so the CLI / Python bindings can use it.
+All builds go to a single CMake build directory — `build/` at the repo root by convention, but any location works. The `SEEKDB_BIN` env var must point to a built `seekdb` binary — it's copied next to `libseekdb` so the CLI / Python bindings can use it.
 
 After configuration (per-platform commands below), choose a `make` target from inside `build/`:
 
 | target | output |
 |---|---|
-| `make seekdb_driver` | `libseekdb_driver.so` (shared) |
+| `make seekdb` | `libseekdb` (shared; `libseekdb_driver` symlink for compatibility) |
 | `make seekdb_cli` | `seekdb_cli` (interactive SQL client) |
 | `make pylibseekdb` | `pylibseekdb.cpython-*.so` (Python extension) |
-| `make seekdb_driver_tests` | `test_one_client_process`, `test_two_clients_threads` |
+| `make seekdb_tests` | `test_one_client_process`, `test_two_clients_threads` |
 | `make wheel` | `wheelhouse/pylibseekdb-*.whl` via cibuildwheel |
 | `make` | everything above |
 
@@ -55,7 +55,7 @@ After configuration (per-platform commands below), choose a `make` target from i
 export SEEKDB_BIN=/path/to/seekdb
 cmake -S . -B build
 cd build
-make seekdb_driver
+make seekdb
 ```
 
 ### Mac
@@ -66,7 +66,7 @@ Identical to Linux, plus `-DWITH_EXTERNAL_ZLIB=YES` (the vendored zlib in mariad
 export SEEKDB_BIN=/path/to/seekdb
 cmake -S . -B build -DWITH_EXTERNAL_ZLIB=YES
 cd build
-make seekdb_driver
+make seekdb
 ```
 
 ### Windows (PowerShell)
@@ -92,7 +92,7 @@ cd <repo>
 cmake -S . -B build -G Ninja `
   -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl
 cd build
-ninja seekdb_driver
+ninja seekdb
 ```
 
 Persist env vars across PowerShell sessions either via your `$PROFILE` file or with `[Environment]::SetEnvironmentVariable("SEEKDB_BIN", "C:\path\to\seekdb.exe", "User")`. The dev-shell load must be re-run every session — there's no good way to bake it in.
@@ -107,7 +107,7 @@ Set-ExecutionPolicy -Scope Process Bypass -Force
 
 | option | default | what it does |
 |---|---|---|
-| `SEEKDB_DRIVER_ENABLE_LOG` | OFF | enables `tlog()` debug prints in the driver |
+| `SEEKDB_DRIVER_ENABLE_LOG` | OFF | enables `tlog()` debug prints in libseekdb |
 | `SEEKDB_BIN` | `$SEEKDB_BIN` env | path to the seekdb binary |
 
 Example:
@@ -137,7 +137,7 @@ Interactive SQL shell, same shape as `mysql` / `mariadb`:
 build/seekdb_cli [db_dir]
 ```
 
-`db_dir` defaults to `./seekdb.db` (created if missing). The seekdb binary is auto-discovered next to `libseekdb_driver.so`.
+`db_dir` defaults to `./seekdb.db` (created if missing). The seekdb binary is auto-discovered next to `libseekdb`.
 
 ## Prepare Python environment
 
