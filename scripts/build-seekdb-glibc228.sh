@@ -12,8 +12,10 @@ if [ ! -d "$REPO" ]; then
   exit 1
 fi
 
-IMAGE="${SEEKDB_EL8_IMAGE:-quay.io/pypa/manylinux_2_28_x86_64:2026.03.20-1}"
+IMAGE="${SEEKDB_EL8_IMAGE:-quay.io/pypa/manylinux_2_28:2026.03.20-1}"
 BUILD_TYPE="${1:-release}"
+
+echo "=== building seekdb ($BUILD_TYPE) in $IMAGE ==="
 
 docker run --rm \
   -v "$REPO":/seekdb -w /seekdb \
