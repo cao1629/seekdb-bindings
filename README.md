@@ -13,7 +13,7 @@ seekdb-bindings/
 │   ├── src/                    library + CLI sources
 │   └── tests/                  gtest cases
 ├── python/                     nanobind module + cibuildwheel config
-├── scripts/                    helper scripts (e.g. openssl for android)
+├── scripts/                    wheel build, seekdb manylinux build, verify-wheel, etc.
 └── deps/                       vendored mariadb-connector-c, googletest
 ```
 
@@ -166,15 +166,56 @@ If `Activate.ps1` is blocked by execution policy, allow it for this process only
 Set-ExecutionPolicy -Scope Process Bypass -Force
 ```
 
-`cibuildwheel` additionally needs Docker running on Linux (it builds inside the manylinux container — not needed on macOS / Windows). Wheel output lands at `build/wheelhouse/pylibseekdb-*.whl`. Each release produces **6 wheels** (3 platforms × 2 Python ABIs): `cp311-cp311` for Python 3.11, and `cp312-abi3` for Python 3.12+ on linux x86_64, linux aarch64, and macOS arm64. See `python/pyproject.toml`.
+`cibuildwheel` additionally needs Docker running on Linux (it builds inside the manylinux container — not needed on macOS / Windows). Wheel output lands at `build/wheelhouse/pylibseekdb-*.whl`. Each release produces **6 wheels** (3 platforms × 2 Python ABIs): `cp311-cp311` for Python 3.11, and `cp312-abi3` for Python 3.12+ (including 3.13 and 3.14) on linux x86_64, linux aarch64, and macOS arm64. See `python/pyproject.toml`.
+
+### One-shot wheel build script
+
+`scripts/build-pylibseekdb-wheel.sh` orchestrates the full release flow: obtain a `seekdb` binary (local path, download URL, or source build), strip it while saving debug symbols, build `libseekdb`, and run `cibuildwheel`. By default it creates `.venv` in the repo root and installs `nanobind`, `cibuildwheel`, and `scikit-build-core` from `scripts/requirements-wheel-build.txt`. Use `--no-venv` or set `PYTHON=` to use a system interpreter instead.
+
+```sh
+# Prebuilt seekdb binary
+./scripts/build-pylibseekdb-wheel.sh --seekdb-bin /path/to/seekdb
+
+# Download a binary
+./scripts/build-pylibseekdb-wheel.sh --seekdb-url https://example.com/seekdb
+
+# Build seekdb from git, then package wheels (manylinux_2_28 on Linux)
+./scripts/build-pylibseekdb-wheel.sh --build-seekdb \
+  --seekdb-git-url https://github.com/oceanbase/seekdb.git \
+  --seekdb-git-ref master
+
+# Override wheel version and target one Linux arch
+./scripts/build-pylibseekdb-wheel.sh --seekdb-bin /path/to/seekdb \
+  --wheel-version 0.2.0 --platform linux --arch x86_64
+```
+
+`--wheel-version` temporarily patches `python/pyproject.toml` for the build (scikit-build-core does not read `CIBW_PROJECT_VERSION`) and restores it afterward.
+
+Run `./scripts/build-pylibseekdb-wheel.sh --help` for all options. Debug symbols are written to `build/seekdb.debug` by default.
 
 **Linux: build seekdb inside manylinux.** The wheel must be ABI-compatible with `manylinux_2_28`, so the `seekdb` binary you point `SEEKDB_BIN` at also needs to be built against glibc 2.28. `scripts/build-seekdb-glibc228.sh` runs `seekdb`'s own `build.sh` inside the manylinux image:
 
 ```sh
 SEEKDB_REPO=~/seekdb ./scripts/build-seekdb-glibc228.sh
+
+# Or clone a specific tag inside the container (binary exported to ./build/seekdb-glibc228):
+SEEKDB_GIT_URL=https://github.com/oceanbase/seekdb.git \
+SEEKDB_GIT_REF=v1.0.0 ./scripts/build-seekdb-glibc228.sh
+
+# Or choose an explicit export path:
+SEEKDB_GIT_URL=https://github.com/oceanbase/seekdb.git \
+SEEKDB_GIT_REF=v1.0.0 \
+SEEKDB_OUT_BIN=./build/seekdb ./scripts/build-seekdb-glibc228.sh
+
+# Optional seekdb cmake flags (forwarded to seekdb's build.sh before --make):
+./scripts/build-seekdb-glibc228.sh release \
+  --seekdb-cmake-arg -DDEFAULT_LOG_LEVEL=OB_LOG_LEVEL_DBA_WARN
+
+./scripts/build-pylibseekdb-wheel.sh --build-seekdb \
+  --seekdb-cmake-arg -DDEFAULT_LOG_LEVEL=OB_LOG_LEVEL_DBA_WARN
 ```
 
-Docker pulls the host-matching `manylinux_2_28` image (x86_64 or aarch64). It prints the resulting binary path and the max GLIBC symbol version at the end — that's the path to use as `SEEKDB_BIN` before `make wheel`.
+Docker (or Podman if Docker is unavailable) pulls the host-matching `manylinux_2_28` image (x86_64 or aarch64). Set `CONTAINER_RUNTIME=podman` to force Podman. It prints the resulting binary path and the max GLIBC symbol version at the end — that's the path to use as `SEEKDB_BIN` before `make wheel`.
 
 Each wheel built by `cibuildwheel` is smoke-tested with `python/tests/seekdb_test.py` (hybrid search end-to-end). To verify wheels built another way:
 
