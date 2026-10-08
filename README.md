@@ -4,8 +4,10 @@ C library, CLI, and Python, Java, and Swift bindings for [seekdb](https://github
 
 Java and Swift expose instance lifecycle and connection information independently
 of the application's SQL client. See [Java bindings](java/README.md) and
-[Swift bindings](swift/README.md). The root `Package.swift` exposes the SwiftPM
-product `SeekDB`; its implementation and tests are contained in `swift/`.
+[Swift bindings](swift/README.md); the Android and iOS builds, packaging and tests
+are in [android/](android/README.md) and [ios/](ios/README.md). The root
+`Package.swift` exposes the SwiftPM product `SeekDB`; its Swift sources and tests
+are in `swift/`, and on iOS it compiles the in-process libseekdb in `lib/src/ios/`.
 
 The core shared library (`libseekdb`, with a `libseekdb_driver` compatibility symlink) is implemented in **C11** (`lib/src/*.c`) and does not link against `libstdc++` or `libc++` (checked in CI via `readelf`); embedders only need a C toolchain to build and pthreads at runtime. The CLI (`seekdb_cli`) is also implemented in C11 (`lib/src/seekdb_cli.c`). The bundled **seekdb server binary** is a separate C++ product and may depend on `libstdc++`; issue #6 applies only to `libseekdb`. C++ is also used for gtest-based integration tests and the optional nanobind Python extension.
 
@@ -16,11 +18,13 @@ seekdb-bindings/
 ├── Package.swift               SwiftPM entry point
 ├── lib/
 │   ├── include/seekdb/seekdb.h public C API
-│   ├── src/                    library + CLI sources
+│   ├── src/                    library + CLI sources; src/ios/ is the iOS in-process libseekdb
 │   └── tests/                  gtest cases
 ├── python/                     nanobind module + cibuildwheel config
 ├── java/                       Java lifecycle binding
-├── swift/                      Swift lifecycle binding, iOS adapter, tests
+├── android/                    Android build, AAR packaging, device tests
+├── swift/                      Swift lifecycle binding
+├── ios/                        iOS build, XCFramework packaging, host tests
 ├── scripts/                    wheel build, seekdb manylinux build, verify-wheel, etc.
 └── deps/                       vendored mariadb-connector-c, googletest
 ```

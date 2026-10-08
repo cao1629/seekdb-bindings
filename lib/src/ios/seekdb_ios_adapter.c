@@ -13,14 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include "include/CSeekDB.h"
+#include "seekdb/seekdb.h"
 
 #ifdef __APPLE__
 #include <TargetConditionals.h>
 #endif
 
-#if (defined(__APPLE__) && TARGET_OS_IOS) || defined(SEEKDB_SWIFT_TEST_IOS)
-#include "Runtime/seekdb_ios.h"
+#if (defined(__APPLE__) && TARGET_OS_IOS) || defined(SEEKDB_IOS_HOST_TEST)
+#include "seekdb_ios.h"
 #include <errno.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -30,7 +30,7 @@
 #include <time.h>
 
 enum { RUNTIME_STACK_SIZE = 8 * 1024 * 1024 };
-#ifdef SEEKDB_SWIFT_TEST_IOS
+#ifdef SEEKDB_IOS_HOST_TEST
 static const double startup_timeout_seconds = 0.25;
 #else
 static const double startup_timeout_seconds = 180.0;

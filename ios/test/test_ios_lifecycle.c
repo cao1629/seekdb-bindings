@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 /* Host-side runtime substitute. Compile the adapter with
- * SEEKDB_SWIFT_TEST_IOS to exercise iOS ownership without engine archives.
+ * SEEKDB_IOS_HOST_TEST to exercise iOS ownership without engine archives.
  * Each case runs in a separate process because the engine is single-use.
  */
-#include "../../Sources/CSeekDB/include/CSeekDB.h"
-#include "../../Sources/CSeekDB/Runtime/seekdb_ios.h"
+#include "seekdb/seekdb.h"
+#include "seekdb_ios.h"
 #include <assert.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -113,8 +113,8 @@ static void make_fixture(void)
 {
     assert(getcwd(original_directory, sizeof(original_directory)) != NULL);
     assert(mkdir("build", 0700) == 0 || access("build", F_OK) == 0);
-    assert(mkdir("build/swift-native-fixtures", 0700) == 0 || access("build/swift-native-fixtures", F_OK) == 0);
-    assert(snprintf(fixture, sizeof(fixture), "%s/build/swift-native-fixtures/ios-XXXXXX", original_directory) < (int)sizeof(fixture));
+    assert(mkdir("build/ios-host-test-fixtures", 0700) == 0 || access("build/ios-host-test-fixtures", F_OK) == 0);
+    assert(snprintf(fixture, sizeof(fixture), "%s/build/ios-host-test-fixtures/ios-XXXXXX", original_directory) < (int)sizeof(fixture));
     assert(mkdtemp(fixture) != NULL);
     /* An absolute socket endpoint here exceeds Darwin's 104-byte sun_path. */
     assert(snprintf(directory, sizeof(directory), "%s/%s", fixture,

@@ -22,7 +22,8 @@ let package = Package(
     targets: [
         .target(
             name: "CSeekDB",
-            path: "swift/Sources/CSeekDB",
+            path: "lib",
+            sources: ["src/ios"],
             publicHeadersPath: "include",
             linkerSettings: [
                 .linkedLibrary("seekdb", .when(platforms: [.macOS, .linux]))
