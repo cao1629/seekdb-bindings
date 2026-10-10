@@ -118,3 +118,85 @@ run in this recheck.
 
 Physical iPhones and long-running stability are not verified. Repeated lifecycle
 cycles within one process are unsupported by the current iOS runtime.
+
+## SeekDB.framework probe
+
+`framework_probe/` tests the dynamic `SeekDB.framework` that oceanbase/seekdb builds
+with `build.iphone.sh release [--simulator] --target seekdb_ios_framework`, not the
+adapter in `lib/src/ios`. That framework packages the engine with the desktop C API
+in `seekdb.h` and exports seven iOS lifecycle functions. The probe App links only
+UIKit, loads the embedded framework with `dlopen`/`dlsym`, and runs SQL through the
+framework's Connector/C driver over the engine's Unix socket. The framework ships no
+header for the iOS functions, so `framework_probe/app/seekdb_ios.h` declares the
+five the probe loads, matching `src/observer/ios/seekdb_ios.h` in seekdb. These tests
+moved here from seekdb's `unittest/ios_build` on 2026-10-10.
+
+The framework directory must contain the `build-manifest.json` that seekdb's
+`verify_framework.py` writes during the framework build, with the matching platform
+and test hooks disabled. It can live anywhere, but the probe build directory and the
+stability output must be inside this repository. The probe records this repository's
+`HEAD` as `SeekDBProbeSourceRevision`.
+
+```sh
+python3 ios/framework_probe/build_framework_probe.py --simulator \
+  --framework /path/to/seekdb/build_ios_sim_arm64/framework/SeekDB.framework \
+  --build build/ios/framework-probe
+python3 ios/framework_probe/build_framework_probe.py \
+  --framework /path/to/seekdb/build_ios_arm64/framework/SeekDB.framework \
+  --build build/ios/framework-probe-device \
+  --profile /path/to/existing.mobileprovision --identity "SIGNING IDENTITY"
+```
+
+Simulator builds are signed ad hoc. Device builds sign offline with an existing
+explicit App profile and its identity; the script does not use an Xcode account.
+Install and launch the App and keep it in the foreground. It writes
+`Documents/framework-probe.json`; a passing report has `complete`, `passed` and
+`worker_exit` true, `hook_mode` disabled, and `build_id` equal to the first 12
+characters of the framework's source revision. Delete the report, launch the probe
+again in a new process, and check that `previous_runs` grew by one. Then validate
+the two reports:
+
+```sh
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+xcrun simctl install SIMULATOR_UDID \
+  build/ios/framework-probe/Release-iphonesimulator/SeekDBFrameworkProbe.app
+xcrun simctl launch --terminate-running-process SIMULATOR_UDID org.seekdb.frameworkprobe
+python3 ios/framework_probe/validate_framework_probe.py \
+  --revision FULL_FRAMEWORK_REVISION run-1.json run-2.json
+```
+
+On a device, use `xcrun devicectl device install app` and
+`xcrun devicectl device process launch` instead, and copy the report out of the
+App data container.
+
+`run_framework_stability.py` runs one foreground soak followed by fresh process
+launches that check the committed counter survived. It needs a framework built from
+a clean seekdb tree (`source_dirty` false). It fails on a sampling gap longer than
+30 seconds or on more than 256 MiB of footprint growth after the warmup. On a device,
+pass `--device UDID` with the device framework and App, and keep the phone unlocked.
+
+```sh
+python3 ios/framework_probe/run_framework_stability.py --simulator SIMULATOR_UDID \
+  --app build/ios/framework-probe/Release-iphonesimulator/SeekDBFrameworkProbe.app \
+  --framework /path/to/seekdb/build_ios_sim_arm64/framework/SeekDB.framework \
+  --output build/ios/stability/UNIQUE_RUN --duration 600 --runs 5
+```
+
+The validators have host tests that run against the recorded evidence:
+
+```sh
+python3 -B -m unittest discover -s ios/framework_probe
+```
+
+`framework_probe/framework_evidence` holds the 2026-10-07 runs recorded in seekdb:
+two process runs and a 600-second stability run each on an iPhone 17 Pro with
+iOS 27.0.1 and on an arm64 iOS 27.0 Simulator, for framework revision
+`6f902fdab24c`.
+
+Checked on 2026-10-10 with macOS 27.0, Xcode 27.0 and the iOS 27.0 SDK after the
+move: the probe built here for the Simulator against a seekdb framework from
+revision `72338ea757ca` (built with an uncommitted change, so its manifest records
+`source_dirty` true), ran twice on an iPhone 17 Simulator with iOS 27.0, passed
+77/77 assertions with `worker_exit` in both runs, advanced `previous_runs` from 3
+to 4, and `validate_framework_probe.py` accepted the pair. The 14 host tests passed.
+The stability runner and a device build were not run after the move.
