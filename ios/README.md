@@ -122,7 +122,8 @@ cycles within one process are unsupported by the current iOS runtime.
 ## SeekDB.framework probe
 
 `framework_probe/` tests the dynamic `SeekDB.framework` that oceanbase/seekdb builds
-with `build.iphone.sh release [--simulator] --target seekdb_ios_framework`, not the
+with `./build.sh release --ios [--simulator] --init --make` (before seekdb `9a35937b0`,
+`build.iphone.sh release [--simulator] --target seekdb_ios_framework`), not the
 adapter in `lib/src/ios`. Since seekdb `2b17e74e7` that framework only runs the engine:
 its `seekdb.h` declares `seekdb_open`, `seekdb_close` and `seekdb_connection_options`,
 and it also exports seven iOS lifecycle functions. Running SQL is the App's job, with
