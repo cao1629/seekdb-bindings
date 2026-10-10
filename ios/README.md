@@ -153,11 +153,11 @@ probe ran SQL through the framework's own C API.
 
 ```sh
 python3 ios/framework_probe/build_framework_probe.py --simulator \
-  --framework /path/to/seekdb/build_ios_sim_arm64/framework/SeekDB.framework \
+  --framework /path/to/seekdb/build_ios_simulator_release/framework/SeekDB.framework \
   --deps-prefix /path/to/seekdb/deps/ios/iphonesimulator/devel \
   --build build/ios/framework-probe
 python3 ios/framework_probe/build_framework_probe.py \
-  --framework /path/to/seekdb/build_ios_arm64/framework/SeekDB.framework \
+  --framework /path/to/seekdb/build_ios_release/framework/SeekDB.framework \
   --deps-prefix /path/to/seekdb/deps/ios/iphoneos/devel \
   --build build/ios/framework-probe-device \
   --profile /path/to/existing.mobileprovision --identity "SIGNING IDENTITY"
@@ -194,7 +194,7 @@ pass `--device UDID` with the device framework and App, and keep the phone unloc
 ```sh
 python3 ios/framework_probe/run_framework_stability.py --simulator SIMULATOR_UDID \
   --app build/ios/framework-probe/Release-iphonesimulator/SeekDBFrameworkProbe.app \
-  --framework /path/to/seekdb/build_ios_sim_arm64/framework/SeekDB.framework \
+  --framework /path/to/seekdb/build_ios_simulator_release/framework/SeekDB.framework \
   --output build/ios/stability/UNIQUE_RUN --duration 600 --runs 5
 ```
 
