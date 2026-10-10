@@ -200,3 +200,10 @@ revision `72338ea757ca` (built with an uncommitted change, so its manifest recor
 77/77 assertions with `worker_exit` in both runs, advanced `previous_runs` from 3
 to 4, and `validate_framework_probe.py` accepted the pair. The 14 host tests passed.
 The stability runner and a device build were not run after the move.
+
+## Parked device test suite
+
+`device_tests/` stores the engine-internal iOS device test suite that seekdb removed on
+2026-10-10. It is a copy laid out like the seekdb repository and does not run from
+here; [device_tests/README.md](device_tests/README.md) explains what it contains and how
+to restore it in seekdb.
