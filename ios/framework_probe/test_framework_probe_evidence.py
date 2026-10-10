@@ -8,6 +8,7 @@ from validate_framework_probe import validate_reports
 
 EVIDENCE = Path(__file__).parent / "framework_evidence"
 REVISION = "6f902fdab24ccefdde97c991b50faf551928b604"
+LIFECYCLE_REVISION = "2b17e74e74f6513caa26c535e436d98964836ca5"
 LIFECYCLE_ENTRY_POINTS = {
     "seekdb_open", "seekdb_close", "seekdb_connection_options", "seekdb_ios_get_state",
     "seekdb_ios_get_cleanup_status", "seekdb_ios_get_cleanup_error", "seekdb_ios_get_build_id",
@@ -80,6 +81,11 @@ class FrameworkEvidenceTests(unittest.TestCase):
         self.reports[1] = self.lifecycle_report(self.reports[1])
         with self.assertRaisesRegex(ValueError, "one known framework API"):
             validate_reports(self.reports, REVISION)
+
+    def test_recorded_lifecycle_runs_pass(self):
+        reports = [json.loads((EVIDENCE / f"lifecycle-20261010/simulator-run-{number}.json").read_text())
+                   for number in (1, 2)]
+        validate_reports(reports, LIFECYCLE_REVISION)
 
 
 if __name__ == "__main__":

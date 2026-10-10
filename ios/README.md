@@ -207,7 +207,8 @@ python3 -B -m unittest discover -s ios/framework_probe
 two process runs and a 600-second stability run each on an iPhone 17 Pro with
 iOS 27.0.1 and on an arm64 iOS 27.0 Simulator, for framework revision
 `6f902fdab24c`. Those runs predate the lifecycle-only framework; the probe then ran
-SQL through the framework's own C API.
+SQL through the framework's own C API. `framework_evidence/lifecycle-20261010/` holds
+the Simulator runs of the lifecycle-only framework.
 
 Checked on 2026-10-10 with macOS 27.0, Xcode 27.0 and the iOS 27.0 SDK after the
 move: the probe built here for the Simulator against a seekdb framework from
@@ -215,7 +216,19 @@ revision `72338ea757ca` (built with an uncommitted change, so its manifest recor
 `source_dirty` true), ran twice on an iPhone 17 Simulator with iOS 27.0, passed
 77/77 assertions with `worker_exit` in both runs, advanced `previous_runs` from 3
 to 4, and `validate_framework_probe.py` accepted the pair. The 14 host tests passed.
-The stability runner and a device build were not run after the move.
+The stability runner and a device build were not run in that check.
+
+Checked again the same day for the lifecycle-only framework, with the same tools and
+Simulator: seekdb `2b17e74e7` built from a clean tree, and the probe from this
+repository's `26fc9cc`. Two process runs passed 51/51 assertions with `worker_exit`,
+`previous_runs` went from 9 to 10, and `validate_framework_probe.py` accepted the pair.
+`run_framework_stability.py --duration 600 --runs 5` passed: 2927 transaction
+iterations and 5781 concurrent reads over 181 connections in 600 seconds, no footprint
+growth after the 60-second warmup, and the committed counter 1464 survived four more
+launches. The warmup footprint, 241.6 MiB, is about 79 MiB higher than in the
+2026-10-07 Simulator run; the cause was not investigated. The 19 host tests passed. No
+device build or device run was done. Details are in
+`framework_probe/framework_evidence/lifecycle-20261010/README.md`.
 
 ## Parked device test suite
 

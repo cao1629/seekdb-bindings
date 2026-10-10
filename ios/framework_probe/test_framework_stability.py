@@ -81,6 +81,13 @@ class FrameworkStabilityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Probe source"):
             validate_stability(self.reports, FRAMEWORK, PROBE, 120)
 
+    def test_recorded_lifecycle_soak_passes(self):
+        evidence = Path(__file__).parent / "framework_evidence/lifecycle-20261010"
+        reports = [json.loads((evidence / f"simulator-stability-run-{number}.json").read_text())
+                   for number in range(1, 6)]
+        validate_stability(reports, "2b17e74e74f6513caa26c535e436d98964836ca5",
+                           "26fc9cc93cac694f3bab11a6af01e8dbec8bbfae", 600)
+
 
 if __name__ == "__main__":
     unittest.main()
