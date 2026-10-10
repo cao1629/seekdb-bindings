@@ -13,12 +13,21 @@ REQUIRED_STEPS = {
     "SQL errors retain MySQL diagnostics", "disconnect", "close and join engine",
     "stopped and cleaned up", "one startup per process",
 }
+LIFECYCLE_STEPS = REQUIRED_STEPS - {"value ownership", "framework allocation"}
+FRAMEWORK_APIS = {
+    None: (REQUIRED_STEPS, 30),
+    "lifecycle": (LIFECYCLE_STEPS, 8),
+}
 
 
 def validate_reports(reports, revision):
     """Reject partial, mismatched or crashed runs and require a persisted counter increment."""
     if len(reports) != 2:
         raise ValueError("Exactly two process runs are required")
+    apis = {report.get("framework_api") for report in reports}
+    if len(apis) != 1 or not apis <= FRAMEWORK_APIS.keys():
+        raise ValueError("Runs must use one known framework API")
+    required, entry_points = FRAMEWORK_APIS[apis.pop()]
     for report in reports:
         if any(report.get(key) is not True for key in ("complete", "passed", "worker_exit")):
             raise ValueError("Run must pass, complete and survive loading-thread TLS destruction")
@@ -30,10 +39,10 @@ def validate_reports(reports, revision):
         if not steps or any(step.get("passed") is not True for step in steps):
             raise ValueError("Missing or failed assertions")
         names = {step["name"] for step in steps}
-        if not REQUIRED_STEPS.issubset(names):
-            raise ValueError("Missing coverage: " + repr(REQUIRED_STEPS - names))
-        if len({name for name in names if name.startswith("dlsym ")}) != 30:
-            raise ValueError("All 25 desktop functions and 5 diagnostic getters must load")
+        if not required.issubset(names):
+            raise ValueError("Missing coverage: " + repr(required - names))
+        if len({name for name in names if name.startswith("dlsym ")}) != entry_points:
+            raise ValueError("Expected %d dynamically loaded framework entry points" % entry_points)
     if not reports[0].get("run_id") or reports[0]["run_id"] == reports[1].get("run_id"):
         raise ValueError("Persistence must use distinct process runs")
     previous = reports[0].get("previous_runs")

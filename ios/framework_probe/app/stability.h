@@ -15,8 +15,8 @@
 #pragma once
 #import <Foundation/Foundation.h>
 #include <functional>
-#include "driver.h"
+#include <mysql.h>
 
 /** Run an explicitly requested bounded socket workload, or verify its counter after restart. */
-bool run_framework_stability(const Driver &driver, SeekdbHandle handle, SeekdbConnection connection,
-                             NSMutableDictionary *report, const std::function<void()> &checkpoint);
+bool run_framework_stability(MYSQL *connection, const char *socket, NSMutableDictionary *report,
+                             const std::function<void()> &checkpoint);

@@ -2,12 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 #import <UIKit/UIKit.h>
 #include <dlfcn.h>
+#include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <unistd.h>
 #include <pthread.h>
+#include <mysql.h>
 #include "seekdb.h"
 #include "seekdb_ios.h"
 
+#include "client.h"
 #include "driver.h"
 #include "stability.h"
 
@@ -24,6 +28,7 @@ public:
     report_[@"complete"] = @NO;
     report_[@"probe_source_revision"] = @PROBE_SOURCE_REVISION;
     report_[@"run_id"] = NSUUID.UUID.UUIDString;
+    report_[@"framework_api"] = @"lifecycle";
     report_[@"test_transport"] = @"Connector/C over actual Unix socket";
     save();
   }
@@ -42,47 +47,42 @@ public:
         report_[@"engine_state"] = @(driver_.seekdb_ios_get_state());
         report_[@"cleanup_error"] = @(driver_.seekdb_ios_get_cleanup_error());
       }
-      if (connection_ != nullptr && driver_.seekdb_last_error != nullptr) {
-        int number = 0;
-        const char *message = nullptr;
-        driver_.seekdb_last_error(connection_, &number, &message);
-        report_[@"mysql_errno"] = @(number);
-        report_[@"mysql_error"] = message ? [NSString stringWithUTF8String:message] : @"";
+      if (connection_ != nullptr) {
+        report_[@"mysql_errno"] = @(mysql_errno(connection_));
+        report_[@"mysql_error"] = [NSString stringWithUTF8String:mysql_error(connection_)];
       }
     }
     save();
     return success;
   }
 
-  /** Execute SQL through the same C API used by the macOS Rust native driver. */
-  bool query(const char *sql, SeekdbResult *result)
+  /** Execute SQL through the App's own Connector/C client over the engine socket. */
+  bool query(const char *sql, MYSQL_RES **result)
   {
+    bool success = mysql_real_query(connection_, sql, strlen(sql)) == 0;
+    *result = success ? mysql_store_result(connection_) : nullptr;
     return check([NSString stringWithUTF8String:sql],
-      driver_.seekdb_query(connection_, sql, strlen(sql), result) == SEEKDB_SUCCESS);
+      success && (*result != nullptr || mysql_field_count(connection_) == 0));
   }
 
-  /** Execute a statement without leaking its allocated empty result. */
+  /** Execute a statement that must not return a result set. */
   bool statement(const char *sql)
   {
-    SeekdbResult result = nullptr;
+    MYSQL_RES *result = nullptr;
     if (!query(sql, &result)) {
       return false;
     }
-    return check(@"free statement result", driver_.seekdb_result_free(result) == SEEKDB_SUCCESS);
+    bool empty = result == nullptr;
+    if (result != nullptr) {
+      mysql_free_result(result);
+    }
+    return check(@"statement has no result set", empty);
   }
 
   /** Read a scalar and enforce complete result traversal. */
   bool scalar(const char *sql, int64_t *value)
   {
-    SeekdbResult result = nullptr;
-    if (!query(sql, &result)) {
-      return false;
-    }
-    bool success = driver_.seekdb_result_next(result) == SEEKDB_SUCCESS
-      && driver_.seekdb_result_get_int64(result, 0, value) == SEEKDB_SUCCESS
-      && driver_.seekdb_result_next(result) == SEEKDB_NO_MORE_ROWS;
-    driver_.seekdb_result_free(result);
-    return check(@"scalar traversal", success);
+    return check([NSString stringWithUTF8String:sql], read_int64(connection_, sql, *value));
   }
 
   /** Validate loading, SQL, transactions, nullable UTF-8 and process restart persistence. */
@@ -99,15 +99,6 @@ public:
 #define LOAD(name) driver_.name = reinterpret_cast<decltype(driver_.name)>(dlsym(library_, #name)); \
     if (!check(@"dlsym " #name, driver_.name != nullptr)) return;
     LOAD(seekdb_open) LOAD(seekdb_close) LOAD(seekdb_connection_options)
-    LOAD(seekdb_connect) LOAD(seekdb_disconnect) LOAD(seekdb_last_error)
-    LOAD(seekdb_query) LOAD(seekdb_result_free) LOAD(seekdb_result_column_count)
-    LOAD(seekdb_result_column_name) LOAD(seekdb_result_column_type_id)
-    LOAD(seekdb_result_row_count) LOAD(seekdb_result_next)
-    LOAD(seekdb_result_get_int64) LOAD(seekdb_result_get_uint64)
-    LOAD(seekdb_result_get_float) LOAD(seekdb_result_get_str)
-    LOAD(seekdb_trx_begin) LOAD(seekdb_trx_commit) LOAD(seekdb_trx_rollback)
-    LOAD(seekdb_value_free) LOAD(seekdb_value_create_int64) LOAD(seekdb_value_get_int64)
-    LOAD(seekdb_malloc) LOAD(seekdb_free)
     LOAD(seekdb_ios_get_state) LOAD(seekdb_ios_get_cleanup_status)
     LOAD(seekdb_ios_get_cleanup_error) LOAD(seekdb_ios_get_build_id) LOAD(seekdb_ios_get_hook_mode)
 #undef LOAD
@@ -130,10 +121,11 @@ public:
     if (!check(@"share existing engine", driver_.seekdb_open(base.fileSystemRepresentation, nullptr, &second) == SEEKDB_SUCCESS)) { finish(false, before); return; }
     if (!check(@"close shared handle", driver_.seekdb_close(second) == SEEKDB_SUCCESS
         && driver_.seekdb_ios_get_state() == SEEKDB_IOS_RUNNING)) { finish(false, before); return; }
-    if (!check(@"connect root empty password", driver_.seekdb_connect(handle_, nullptr, true, &connection_) == SEEKDB_SUCCESS)) { finish(false, before); return; }
+    connection_ = mysql_init(nullptr);
+    if (!check(@"connect root empty password", connect_socket_client(connection_, options.endpoint, nullptr))) { finish(false, before); return; }
     bool passed = sql_suite();
     if (passed) {
-      passed = run_framework_stability(driver_, handle_, connection_, report_, [this] { save(); });
+      passed = run_framework_stability(connection_, options.endpoint, report_, [this] { save(); });
     }
     finish(passed, before);
   }
@@ -152,73 +144,54 @@ private:
     if (!statement("UPDATE persistence SET n=n+1 WHERE id=1")
         || !statement("DROP TABLE IF EXISTS cells")
         || !statement("CREATE TABLE cells (id BIGINT PRIMARY KEY, v VARCHAR(100) NULL)")
-        || !check(@"begin committed transaction", driver_.seekdb_trx_begin(connection_) == 0)
+        || !check(@"begin committed transaction", execute_sql(connection_, "START TRANSACTION"))
         || !statement("INSERT INTO cells VALUES (1, '中文🙂'), (2, NULL), (3, '')")
-        || !check(@"commit transaction", driver_.seekdb_trx_commit(connection_) == 0)
-        || !check(@"begin rolled back transaction", driver_.seekdb_trx_begin(connection_) == 0)
+        || !check(@"commit transaction", execute_sql(connection_, "COMMIT"))
+        || !check(@"begin rolled back transaction", execute_sql(connection_, "START TRANSACTION"))
         || !statement("INSERT INTO cells VALUES (4, 'rollback')")
-        || !check(@"rollback transaction", driver_.seekdb_trx_rollback(connection_) == 0)) return false;
+        || !check(@"rollback transaction", execute_sql(connection_, "ROLLBACK"))) return false;
     int64_t count = 0;
     if (!scalar("SELECT COUNT(*) FROM cells", &count) || !check(@"rollback invisible and commit visible", count == 3)) return false;
-    SeekdbResult result = nullptr;
-    if (!query("SELECT id,v FROM cells ORDER BY id", &result)) return false;
-    int64_t columns = 0, rows = 0;
-    const char *name = nullptr;
-    SeekdbTypeId type = SEEKDB_TYPE_NULL;
-    bool passed = driver_.seekdb_result_column_count(result, &columns) == 0 && columns == 2
-      && driver_.seekdb_result_row_count(result, &rows) == 0 && rows == 3
-      && driver_.seekdb_result_column_name(result, 1, &name) == 0 && strcmp(name, "v") == 0
-      && driver_.seekdb_result_column_type_id(result, 1, &type) == 0 && type == SEEKDB_TYPE_VARCHAR;
+    MYSQL_RES *result = nullptr;
+    if (!query("SELECT id,v FROM cells ORDER BY id", &result) || result == nullptr) return false;
+    MYSQL_FIELD *value_field = mysql_num_fields(result) == 2 ? mysql_fetch_field_direct(result, 1) : nullptr;
+    bool passed = value_field != nullptr && mysql_num_rows(result) == 3 && strcmp(value_field->name, "v") == 0
+      && (value_field->type == MYSQL_TYPE_VAR_STRING || value_field->type == MYSQL_TYPE_VARCHAR
+          || value_field->type == MYSQL_TYPE_STRING);
     const char *expected[] = {"中文🙂", nullptr, ""};
     for (int i = 0; i < 3 && passed; ++i) {
-      const char *data = nullptr;
-      size_t length = 99;
-      int is_null = -1;
-      int64_t id = 0;
-      passed = driver_.seekdb_result_next(result) == 0
-        && driver_.seekdb_result_get_int64(result, 0, &id) == 0 && id == i + 1
-        && driver_.seekdb_result_get_str(result, 1, &data, &length, &is_null) == 0;
+      MYSQL_ROW row = mysql_fetch_row(result);
+      unsigned long *lengths = row != nullptr ? mysql_fetch_lengths(result) : nullptr;
+      passed = row != nullptr && lengths != nullptr && row[0] != nullptr && strtoll(row[0], nullptr, 10) == i + 1;
       if (expected[i] == nullptr) {
-        passed = passed && is_null == 1 && data == nullptr && length == 0;
+        passed = passed && row[1] == nullptr && lengths[1] == 0;
       } else {
-        passed = passed && is_null == 0 && length == strlen(expected[i])
-          && data != nullptr && memcmp(data, expected[i], length) == 0;
+        passed = passed && row[1] != nullptr && lengths[1] == strlen(expected[i])
+          && memcmp(row[1], expected[i], lengths[1]) == 0;
       }
     }
-    passed = passed && driver_.seekdb_result_next(result) == SEEKDB_NO_MORE_ROWS;
-    driver_.seekdb_result_free(result);
+    passed = passed && mysql_fetch_row(result) == nullptr && mysql_errno(connection_) == 0;
+    mysql_free_result(result);
     if (!check(@"nullable UTF-8, empty string, metadata and row traversal", passed)) return false;
-    if (!query("SELECT CAST(18446744073709551615 AS UNSIGNED), 1.25", &result)) return false;
-    uint64_t integer = 0;
-    double floating = 0;
-    passed = driver_.seekdb_result_next(result) == 0
-      && driver_.seekdb_result_get_uint64(result, 0, &integer) == 0 && integer == UINT64_MAX
-      && driver_.seekdb_result_get_float(result, 1, &floating) == 0 && floating == 1.25;
-    driver_.seekdb_result_free(result);
+    if (!query("SELECT CAST(18446744073709551615 AS UNSIGNED), 1.25", &result) || result == nullptr) return false;
+    MYSQL_ROW row = mysql_fetch_row(result);
+    MYSQL_FIELD *integer_field = mysql_fetch_field_direct(result, 0);
+    passed = row != nullptr && row[0] != nullptr && row[1] != nullptr
+      && (integer_field->flags & UNSIGNED_FLAG) != 0
+      && strtoull(row[0], nullptr, 10) == UINT64_MAX && strtod(row[1], nullptr) == 1.25;
+    mysql_free_result(result);
     if (!check(@"unsigned and floating results", passed)) return false;
-    SeekdbValue value = nullptr;
-    int64_t signed_value = 0;
-    passed = driver_.seekdb_value_create_int64(-42, &value) == 0
-      && driver_.seekdb_value_get_int64(value, &signed_value) == 0 && signed_value == -42;
-    if (value != nullptr) driver_.seekdb_value_free(value);
-    if (!check(@"value ownership", passed)) return false;
-    void *allocated = driver_.seekdb_malloc(32);
-    driver_.seekdb_free(allocated);
-    if (!check(@"framework allocation", allocated != nullptr)) return false;
-    result = nullptr;
-    int error = 0;
-    const char *message = nullptr;
-    return check(@"SQL errors retain MySQL diagnostics", driver_.seekdb_query(connection_, "SELECT missing_column", 21, &result) == SEEKDB_INTERNAL_ERROR
-      && result == nullptr && driver_.seekdb_last_error(connection_, &error, &message) == 0
-      && error != 0 && message != nullptr && message[0] != '\0');
+    return check(@"SQL errors retain MySQL diagnostics", mysql_real_query(connection_, "SELECT missing_column", 21) != 0
+      && mysql_errno(connection_) != 0 && mysql_error(connection_)[0] != '\0');
   }
 
   /** Close all owned objects and assert restored process state before completing the report. */
   void finish(bool success, const char *before)
   {
     if (connection_ != nullptr) {
-      success = check(@"disconnect", driver_.seekdb_disconnect(connection_) == 0) && success;
+      mysql_close(connection_);
       connection_ = nullptr;
+      success = check(@"disconnect", true) && success;
     }
     success = check(@"close and join engine", driver_.seekdb_close(handle_) == 0) && success;
     handle_ = nullptr;
@@ -245,7 +218,7 @@ private:
   Driver driver_;
   void *library_ = nullptr;
   SeekdbHandle handle_ = nullptr;
-  SeekdbConnection connection_ = nullptr;
+  MYSQL *connection_ = nullptr;
   NSMutableDictionary *report_;
   NSMutableArray *steps_;
   NSString *path_;
@@ -266,7 +239,7 @@ static void *run_probe_thread(void *context)
 @property(nonatomic, strong) UIWindow *window;
 @end
 @implementation FrameworkProbeDelegate
-/** Show a status screen and run the blocking C ABI on a joinable background thread. */
+/** Show a status screen and run the blocking lifecycle API on a joinable background thread. */
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options
 {
   self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];

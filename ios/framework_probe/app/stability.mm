@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #import <UIKit/UIKit.h>
 #include "stability.h"
+#include "client.h"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -15,33 +16,6 @@
 
 namespace {
 using Clock = std::chrono::steady_clock;
-
-/** Execute a statement and release its result even when the server returns an error. */
-bool execute(const Driver &driver, SeekdbConnection connection, const char *sql)
-{
-  SeekdbResult result = nullptr;
-  bool success = driver.seekdb_query(connection, sql, strlen(sql), &result) == SEEKDB_SUCCESS;
-  if (result != nullptr) {
-    success = driver.seekdb_result_free(result) == SEEKDB_SUCCESS && success;
-  }
-  return success;
-}
-
-/** Read exactly one non-null integer and release all client result storage. */
-bool integer(const Driver &driver, SeekdbConnection connection, const char *sql, int64_t &value)
-{
-  SeekdbResult result = nullptr;
-  bool success = driver.seekdb_query(connection, sql, strlen(sql), &result) == SEEKDB_SUCCESS;
-  if (success) {
-    success = driver.seekdb_result_next(result) == SEEKDB_SUCCESS
-      && driver.seekdb_result_get_int64(result, 0, &value) == SEEKDB_SUCCESS
-      && driver.seekdb_result_next(result) == SEEKDB_NO_MORE_ROWS;
-  }
-  if (result != nullptr) {
-    success = driver.seekdb_result_free(result) == SEEKDB_SUCCESS && success;
-  }
-  return success;
-}
 
 /** Read UIKit state on its owning thread so background suspension cannot count as a pass. */
 bool foreground()
@@ -65,8 +39,7 @@ bool footprint(uint64_t &bytes)
 
 /** Own one independent socket reader and its counters until the main worker joins it. */
 struct Reader {
-  const Driver &driver;
-  SeekdbHandle handle;
+  const char *socket;
   std::atomic<bool> stop{false};
   std::atomic<bool> failed{false};
   std::atomic<uint64_t> reads{0};
@@ -77,81 +50,63 @@ struct Reader {
 void *read_loop(void *opaque)
 {
   auto &state = *static_cast<Reader *>(opaque);
-  SeekdbConnection connection = nullptr;
+  mysql_thread_init();
+  MYSQL *connection = nullptr;
   while (!state.stop.load()) {
     if (connection == nullptr) {
-      if (state.driver.seekdb_connect(state.handle, "framework_probe", true, &connection) != SEEKDB_SUCCESS) {
+      connection = mysql_init(nullptr);
+      if (!connect_socket_client(connection, state.socket, "framework_probe")) {
         state.failed.store(true);
         break;
       }
       state.connections.fetch_add(1);
-      if (!execute(state.driver, connection, "SET ob_query_timeout=2000000")) {
+      if (!execute_sql(connection, "SET ob_query_timeout=2000000")) {
         state.failed.store(true);
         break;
       }
     }
     int64_t value = -1;
-    if (!integer(state.driver, connection, "SELECT n FROM stability_counter WHERE id=1", value) || value < 0) {
+    if (!read_int64(connection, "SELECT n FROM stability_counter WHERE id=1", value) || value < 0) {
       state.failed.store(true);
       break;
     }
     uint64_t reads = state.reads.fetch_add(1) + 1;
     if (reads % 32 == 0) {
-      if (state.driver.seekdb_disconnect(connection) != SEEKDB_SUCCESS) {
-        state.failed.store(true);
-        connection = nullptr;
-        break;
-      }
+      mysql_close(connection);
       connection = nullptr;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
-  if (connection != nullptr && state.driver.seekdb_disconnect(connection) != SEEKDB_SUCCESS) {
-    state.failed.store(true);
+  if (connection != nullptr) {
+    mysql_close(connection);
   }
+  mysql_thread_end();
   return nullptr;
 }
 
-/** Repeat committed and rolled-back updates with exact visibility and client ownership checks. */
-bool write_iteration(const Driver &driver, SeekdbConnection connection, uint64_t iteration, int64_t &expected)
+/** Repeat committed and rolled-back updates and check exact visibility after each one. */
+bool write_iteration(MYSQL *connection, uint64_t iteration, int64_t &expected)
 {
-  if (driver.seekdb_trx_begin(connection) != SEEKDB_SUCCESS) {
+  if (!execute_sql(connection, "START TRANSACTION")) {
     return false;
   }
-  if (!execute(driver, connection, "UPDATE stability_counter SET n=n+1, payload='中文🙂稳定性测试' WHERE id=1")) {
-    driver.seekdb_trx_rollback(connection);
+  if (!execute_sql(connection, "UPDATE stability_counter SET n=n+1, payload='中文🙂稳定性测试' WHERE id=1")) {
+    execute_sql(connection, "ROLLBACK");
     return false;
   }
   bool commit = iteration % 2 == 0;
-  int result = commit ? driver.seekdb_trx_commit(connection) : driver.seekdb_trx_rollback(connection);
-  if (result != SEEKDB_SUCCESS) {
+  if (!execute_sql(connection, commit ? "COMMIT" : "ROLLBACK")) {
     return false;
   }
   expected += commit ? 1 : 0;
   int64_t actual = -1;
-  if (!integer(driver, connection, "SELECT n FROM stability_counter WHERE id=1", actual) || actual != expected) {
-    return false;
-  }
-  void *allocation = driver.seekdb_malloc(4096);
-  if (allocation == nullptr) {
-    return false;
-  }
-  memset(allocation, 0x5a, 4096);
-  driver.seekdb_free(allocation);
-  SeekdbValue value = nullptr;
-  int64_t returned = -1;
-  bool success = driver.seekdb_value_create_int64(expected, &value) == SEEKDB_SUCCESS
-    && driver.seekdb_value_get_int64(value, &returned) == SEEKDB_SUCCESS && returned == expected;
-  if (value != nullptr) {
-    success = driver.seekdb_value_free(value) == SEEKDB_SUCCESS && success;
-  }
-  return success;
+  return read_int64(connection, "SELECT n FROM stability_counter WHERE id=1", actual) && actual == expected;
 }
 } // namespace
 
-/** Keep a bounded workload and its persistence proof separate from the basic C ABI assertions. */
-bool run_framework_stability(const Driver &driver, SeekdbHandle handle, SeekdbConnection connection,
-                             NSMutableDictionary *report, const std::function<void()> &checkpoint)
+/** Keep a bounded workload and its persistence proof separate from the basic lifecycle assertions. */
+bool run_framework_stability(MYSQL *connection, const char *socket, NSMutableDictionary *report,
+                             const std::function<void()> &checkpoint)
 {
   const char *setting = getenv("SEEKDB_FRAMEWORK_STABILITY_SECONDS");
   if (setting == nullptr) {
@@ -170,7 +125,7 @@ bool run_framework_stability(const Driver &driver, SeekdbHandle handle, SeekdbCo
   status[@"requested_seconds"] = @(seconds);
   if (seconds == 0) {
     int64_t counter = -1;
-    bool success = integer(driver, connection, "SELECT n FROM stability_counter WHERE id=1", counter) && counter >= 0;
+    bool success = read_int64(connection, "SELECT n FROM stability_counter WHERE id=1", counter) && counter >= 0;
     status[@"mode"] = @"restart-persistence";
     status[@"final_counter"] = @(counter);
     status[@"passed"] = @(success);
@@ -178,19 +133,19 @@ bool run_framework_stability(const Driver &driver, SeekdbHandle handle, SeekdbCo
     return success;
   }
   status[@"mode"] = @"foreground-soak";
-  if (!execute(driver, connection, "CREATE TABLE IF NOT EXISTS stability_counter (id BIGINT PRIMARY KEY,n BIGINT NOT NULL,payload VARCHAR(512))")
-      || !execute(driver, connection, "INSERT IGNORE INTO stability_counter VALUES (1,0,'')")
-      || !execute(driver, connection, "SET ob_query_timeout=2000000")) {
+  if (!execute_sql(connection, "CREATE TABLE IF NOT EXISTS stability_counter (id BIGINT PRIMARY KEY,n BIGINT NOT NULL,payload VARCHAR(512))")
+      || !execute_sql(connection, "INSERT IGNORE INTO stability_counter VALUES (1,0,'')")
+      || !execute_sql(connection, "SET ob_query_timeout=2000000")) {
     status[@"failure"] = @"workload setup failed";
     checkpoint();
     return false;
   }
   int64_t expected = -1;
-  if (!integer(driver, connection, "SELECT n FROM stability_counter WHERE id=1", expected)) {
+  if (!read_int64(connection, "SELECT n FROM stability_counter WHERE id=1", expected)) {
     return false;
   }
   status[@"previous_counter"] = @(expected);
-  Reader reader{driver, handle};
+  Reader reader{socket};
   pthread_t thread;
   if (pthread_create(&thread, nullptr, read_loop, &reader) != 0) {
     status[@"failure"] = @"reader thread creation failed";
@@ -214,8 +169,8 @@ bool run_framework_stability(const Driver &driver, SeekdbHandle handle, SeekdbCo
         break;
       }
       auto operation = Clock::now();
-      if (reader.failed.load() || !write_iteration(driver, connection, iterations, expected)) {
-        status[@"failure"] = @"socket SQL or ownership check failed";
+      if (reader.failed.load() || !write_iteration(connection, iterations, expected)) {
+        status[@"failure"] = @"socket SQL check failed";
         success = false;
         break;
       }

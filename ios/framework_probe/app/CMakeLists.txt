@@ -1,14 +1,17 @@
 cmake_minimum_required(VERSION 3.24)
 project(SeekDBFrameworkProbe LANGUAGES CXX OBJCXX)
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS" OR NOT EXISTS "${SEEKDB_FRAMEWORK}/SeekDB")
-  message(FATAL_ERROR "Provide an iOS SDK and a verified SEEKDB_FRAMEWORK directory")
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS" OR NOT EXISTS "${SEEKDB_FRAMEWORK}/SeekDB"
+   OR NOT EXISTS "${CONNECTOR_LIBRARY}" OR NOT EXISTS "${DEPS_PREFIX}/lib/libssl.a")
+  message(FATAL_ERROR "Provide an iOS SDK, a verified SEEKDB_FRAMEWORK, CONNECTOR_LIBRARY and DEPS_PREFIX")
 endif()
 add_executable(SeekDBFrameworkProbe MACOSX_BUNDLE main.mm stability.mm)
 target_include_directories(SeekDBFrameworkProbe PRIVATE
-  "${SEEKDB_FRAMEWORK}/Headers" "${CMAKE_CURRENT_SOURCE_DIR}")
+  "${SEEKDB_FRAMEWORK}/Headers" "${CMAKE_CURRENT_SOURCE_DIR}" ${CONNECTOR_INCLUDE_DIRS})
 target_compile_options(SeekDBFrameworkProbe PRIVATE -fobjc-arc)
 target_compile_definitions(SeekDBFrameworkProbe PRIVATE PROBE_SOURCE_REVISION="${PROBE_SOURCE_REVISION}")
-target_link_libraries(SeekDBFrameworkProbe PRIVATE "-framework UIKit")
+target_link_libraries(SeekDBFrameworkProbe PRIVATE "${CONNECTOR_LIBRARY}"
+  "${DEPS_PREFIX}/lib/libssl.a" "${DEPS_PREFIX}/lib/libcrypto.a" "${DEPS_PREFIX}/lib/libz.a"
+  "-framework UIKit")
 set_target_properties(SeekDBFrameworkProbe PROPERTIES
   CXX_STANDARD 17
   MACOSX_BUNDLE_GUI_IDENTIFIER "${PROBE_BUNDLE_ID}"

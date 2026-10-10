@@ -123,26 +123,41 @@ cycles within one process are unsupported by the current iOS runtime.
 
 `framework_probe/` tests the dynamic `SeekDB.framework` that oceanbase/seekdb builds
 with `build.iphone.sh release [--simulator] --target seekdb_ios_framework`, not the
-adapter in `lib/src/ios`. That framework packages the engine with the desktop C API
-in `seekdb.h` and exports seven iOS lifecycle functions. The probe App links only
-UIKit, loads the embedded framework with `dlopen`/`dlsym`, and runs SQL through the
-framework's Connector/C driver over the engine's Unix socket. The framework ships no
-header for the iOS functions, so `framework_probe/app/seekdb_ios.h` declares the
-five the probe loads, matching `src/observer/ios/seekdb_ios.h` in seekdb. These tests
-moved here from seekdb's `unittest/ios_build` on 2026-10-10.
+adapter in `lib/src/ios`. Since seekdb `2b17e74e7` that framework only runs the engine:
+its `seekdb.h` declares `seekdb_open`, `seekdb_close` and `seekdb_connection_options`,
+and it also exports seven iOS lifecycle functions. Running SQL is the App's job, with
+a MySQL-protocol client of its choice. The probe App links UIKit and its own
+Connector/C, loads the three lifecycle functions and five iOS diagnostic functions from
+the embedded framework with `dlopen`/`dlsym`, and runs SQL with Connector/C over the
+Unix socket that `seekdb_connection_options` returns. The framework ships no header for
+the iOS functions, so `framework_probe/app/seekdb_ios.h` declares the five the probe
+loads, matching `src/observer/ios/seekdb_ios.h` in seekdb. These tests moved here from
+seekdb's `unittest/ios_build` on 2026-10-10.
+
+`framework_probe/mariadb-connector-c/` is MariaDB Connector/C 3.4.8 (upstream revision
+`46880b003653a000e9588bd73c8b1dd65088c686`), unmodified and licensed under
+LGPL-2.1-or-later (`COPYING.LIB`). It moved here from seekdb's `deps/ios-driver` when the
+framework stopped running SQL. `build_framework_probe.py` builds it as a static library
+for the selected SDK with OpenSSL and zlib from `--deps-prefix`, the
+`deps/ios/<sdk>/devel` directory that seekdb's iOS dependency build produces, and links
+the probe against it.
 
 The framework directory must contain the `build-manifest.json` that seekdb's
 `verify_framework.py` writes during the framework build, with the matching platform
 and test hooks disabled. It can live anywhere, but the probe build directory and the
 stability output must be inside this repository. The probe records this repository's
-`HEAD` as `SeekDBProbeSourceRevision`.
+`HEAD` as `SeekDBProbeSourceRevision`, and its reports set `framework_api` to
+`lifecycle`. The validators also accept the earlier reports without that field, whose
+probe ran SQL through the framework's own C API.
 
 ```sh
 python3 ios/framework_probe/build_framework_probe.py --simulator \
   --framework /path/to/seekdb/build_ios_sim_arm64/framework/SeekDB.framework \
+  --deps-prefix /path/to/seekdb/deps/ios/iphonesimulator/devel \
   --build build/ios/framework-probe
 python3 ios/framework_probe/build_framework_probe.py \
   --framework /path/to/seekdb/build_ios_arm64/framework/SeekDB.framework \
+  --deps-prefix /path/to/seekdb/deps/ios/iphoneos/devel \
   --build build/ios/framework-probe-device \
   --profile /path/to/existing.mobileprovision --identity "SIGNING IDENTITY"
 ```
@@ -191,7 +206,8 @@ python3 -B -m unittest discover -s ios/framework_probe
 `framework_probe/framework_evidence` holds the 2026-10-07 runs recorded in seekdb:
 two process runs and a 600-second stability run each on an iPhone 17 Pro with
 iOS 27.0.1 and on an arm64 iOS 27.0 Simulator, for framework revision
-`6f902fdab24c`.
+`6f902fdab24c`. Those runs predate the lifecycle-only framework; the probe then ran
+SQL through the framework's own C API.
 
 Checked on 2026-10-10 with macOS 27.0, Xcode 27.0 and the iOS 27.0 SDK after the
 move: the probe built here for the Simulator against a seekdb framework from
