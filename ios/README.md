@@ -67,15 +67,15 @@ and checks that a second start in the same process is refused with its
 diagnostic. The framework itself is also tested by the probe below.
 
 Validated on 2026-10-14 with macOS 27.0, Xcode 27.0, Swift 6.4 and the iOS 27.0
-SDK, against Device and Simulator frameworks built from seekdb `c51cffb99` (branch
+SDK, against Device and Simulator frameworks built from seekdb `1a96b7f30` (branch
 `feature/ios-swift`, 13 exports): `ios/build.sh` packaged both, and the 14 Swift tests
-passed on an iPhone 17 Simulator with iOS 27.0, the in-process engine test in 13.9
+passed on an iPhone 17 Simulator with iOS 27.0, the in-process engine test in 14.9
 seconds. On the same Simulator, a separate Swift package that depends on this one by
 local path opened the engine through the `SeekDB` product, read its connection
 options and closed it. `ios/build.sh` rejected the framework header from before seekdb
 `e49e515fe`, whose `SeekdbConnectionOptions` had four fields. The probe below passed
-two process runs against the Simulator framework (51/51 each, `previous_runs` 22 to
-23). The Device framework was built and verified but not run on a device.
+two process runs against the Simulator framework (51/51 each, `previous_runs` 24 to
+25). The Device framework was built and verified but not run on a device.
 
 ## SeekDB.framework probe
 
