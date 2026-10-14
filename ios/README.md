@@ -1,132 +1,87 @@
-# iOS in-process engine for Swift
+# iOS
 
 An iOS app cannot start the separate SeekDB process that libseekdb launches on
-desktop systems and Android. On iOS, libseekdb is instead
-`lib/src/ios/seekdb_ios_adapter.c`: `seekdb_open` runs the engine inside the
-application on a dedicated 8 MiB-stack thread, and `seekdb_last_open_error`,
-`seekdb_connection_options` and `seekdb_close` keep the C API in
-`lib/include/seekdb/seekdb.h`. The C query functions are not implemented on iOS.
-The adapter reaches the engine through the private runtime declarations in
-`lib/src/ios/seekdb_ios.h`, which match `cao1629/seekdb`, branch
-`codex/iphone-arm64-port`, revision `60ab0316de669395cb6ddc3988854087ca26b0f9`.
-The Swift API is platform-neutral and lives in `swift/`; only the iOS build,
+desktop systems and Android. On iOS the Swift package links `SeekDB.framework`,
+the dynamic framework that oceanbase/seekdb builds with
+`./build.sh release --ios [--simulator] --init --make`. It runs the engine inside
+the application on a dedicated 8 MiB-stack thread and implements `seekdb_open`,
+`seekdb_last_open_error`, `seekdb_close` and `seekdb_connection_options` with the
+declarations in `lib/include/seekdb/seekdb.h`. The C query functions are not
+available on iOS. The Swift API is platform-neutral and lives in `swift/`; the iOS
 packaging, runtime constraints and tests are here.
 
 ## Build
 
-Requires macOS with full Xcode and the iOS SDKs. The script uses
-`/Applications/Xcode.app/Contents/Developer` unless `DEVELOPER_DIR` is set, so the
-global `xcode-select` setting does not need to change. The engine archives are not
-built or downloaded by the script; build them from the seekdb branch above with its
-`build.iphone.sh`.
+Requires macOS with full Xcode and the iOS SDKs. The scripts use
+`/Applications/Xcode.app/Contents/Developer` unless `DEVELOPER_DIR` is set. Build
+the framework in a seekdb checkout, then package it here:
 
 ```sh
-bash ios/build.sh
-RUN_HOST_TEST=1 BUILD_SWIFT_PACKAGE=1 bash ios/build.sh
+cd /path/to/seekdb
+./build.sh release --ios --init --make -j8               # device
+./build.sh release --ios --simulator --init --make -j8   # Simulator
+cd /path/to/seekdb-bindings
+SEEKDB_DIR=/path/to/seekdb bash ios/build.sh
 ```
 
-Outputs are in `build/ios`. `package/libseekdb.xcframework` holds static libseekdb
-archives for ARM64 devices and the ARM64 Simulator, each with the `lib/include`
-headers. Every adapter object is checked with `vtool` for the IOS or IOSSIMULATOR
-platform before it is archived. The minimum system version defaults to 18.0; set
-`IOS_DEPLOYMENT_TARGET` to change it and `IOS_BUILD_DIR` to move the output.
-`RUN_HOST_TEST=1` builds and runs the host lifecycle test described below.
-`BUILD_SWIFT_PACKAGE=1` builds the root Swift package for generic iOS devices and
-Simulators with `xcodebuild`, without code signing.
+`ios/build.sh` puts each `SeekDB.framework` it finds in `SEEKDB_DIR` (device,
+Simulator or both) into `build/ios/SeekDBEngine.xcframework`. It first checks each
+framework's platform and that its `seekdb.h` declares the same
+`SeekdbConnectionOptions` and lifecycle functions as `lib/include/seekdb/seekdb.h`.
+When that XCFramework exists, the root `Package.swift` adds it as the binary target
+`SeekDBEngine` and links it into the `SeekDB` product on iOS only; macOS and Linux
+keep linking libseekdb. `BUILD_SWIFT_PACKAGE=1` also builds the package with
+`xcodebuild` for each packaged platform, and `TEST_SIMULATOR=<simulator id>` runs
+the Swift tests on that Simulator.
 
 ## Use
 
 Swift apps depend on the root package's `SeekDB` product, as shown in the
-[Swift bindings](../swift/README.md). On iOS, SwiftPM compiles `lib/src/ios` into
-the `CSeekDB` module, so the desktop `libseekdb` is neither built nor linked. Apps
-that call the C API directly can link `libseekdb.xcframework` instead.
+[Swift bindings](../swift/README.md); Xcode embeds and signs `SeekDB.framework`
+with the app. Apps that call the C API directly can embed the framework and
+include its `Headers/seekdb.h`.
 
-Either way the app must also link the engine: its archives, their complete static
-link dependencies, the C++ runtime and Apple frameworks. The observer archive alone
-is insufficient. The engine build's `app/engine-link.rsp` records that link closure
-in compiler-driver argument format; pass those arguments to the app's link step.
-When reusing that probe response file, omit `libseekdb_ios_sql_probe.a`, which
-belongs to the engine's test app rather than the lifecycle runtime. Neither the
-Swift package nor the XCFramework contains engine binaries.
+- iOS 18 or newer. Device and Simulator frameworks are separate slices.
+- One engine start per process. Opening the same directory again shares the
+  running engine; another directory is rejected. After the last close, reopening
+  requires a new process, and `seekdb_last_open_error` says so.
+- A new database defaults to `memory_budget=1G`, `vector_memory_limit=128M`,
+  `log_disk_size=2G` and `datafile_maxsize=20G`; parameters override them when the
+  database is created. TCP is not available: a non-zero `port`, or a
+  `mysql_port_mode` other than `disabled`, is rejected.
+- Open returns once the engine runs and its Unix socket sends a MySQL handshake.
+  The connection options carry `transport` `unix_socket`, the socket path in
+  `unix_socket` (a short alias under the App's tmp directory, or under `/tmp` on
+  the Simulator, when the real path is too long) and `user` `root`, with an empty
+  password.
+- The engine changes the process working directory, so use absolute paths. Open
+  and close block; call them away from the UI thread. Close SQL clients before the
+  last close, which stops the engine and joins its thread without a timeout.
 
-Current runtime constraints are explicit:
+## Tests
 
-- iOS 18 or newer, with matching device or ARM64 Simulator archives. A Simulator
-  archive cannot be used for a device build.
-- One engine invocation and one owning handle per application process. A second
-  open is rejected, including after a successful close. Restart the process to
-  reopen the same persistent directory.
-- Only an empty parameter list is supported. The linked runtime uses a 1 GiB
-  logical memory budget, a 128 MiB vector limit, a 2 GiB log allocation, CPU count
-  2, two SQL network threads, and disabled TCP. Unsupported settings are rejected.
-- Open waits for the runtime to report Running and create its Unix socket, with
-  a 180-second startup deadline. This is not a successful SQL-query check; clients
-  must handle their own authentication and database readiness errors.
-- The endpoint is the relative path `run/sql.sock`, avoiding the Unix socket
-  address limit for long sandbox paths. The runtime changes the process working
-  directory to the database directory. The app must not change it while the
-  engine or its clients are active. Use absolute paths for other app file work.
-- Open and close block, so call them away from the UI thread. Close requests
-  shutdown and joins the engine thread, with no shutdown timeout; disconnect all
-  SQL clients first. On a close error the handle is retained. A failed startup or
-  shutdown may leave process-global engine state; do not retry engine startup in
-  that process, and expect that an engine failure may require terminating the
-  application.
+`swift/Tests/SeekDBTests` runs on a Simulator through `TEST_SIMULATOR`. On iOS,
+`testInProcessEngineServesMySQLUntilItsOnlyClose` starts the engine, checks the
+connection options, reads the MySQL handshake from the socket, closes the engine
+and checks that a second start in the same process is refused with its
+diagnostic. The framework itself is also tested by the probe below.
 
-## Tests and limitations
-
-`test/test_ios_lifecycle.c` substitutes only the engine runtime, so the adapter's
-real thread, socket and lifecycle code runs on the macOS host without engine
-archives. Each case runs in a separate process because the engine is single-use.
-It covers invalid arguments and thread-local diagnostics, startup failure, startup
-timeout, a missing socket, shutdown failure, and a real Unix socket whose absolute
-path exceeds the platform limit. `RUN_HOST_TEST=1 bash ios/build.sh` compiles it
-with `SEEKDB_IOS_HOST_TEST` and runs it from the repository root; its fixtures are
-created under `build/ios-host-test-fixtures`.
-
-Validated on 2026-09-29 with Apple Silicon macOS 15.5, Xcode 16.4, Swift 6.1.2 and
-the iPhoneSimulator 18.5 SDK:
-
-- The six host lifecycle tests passed normally and under AddressSanitizer and
-  UndefinedBehaviorSanitizer. ARM64 iOS Simulator C compilation passed
-  `-Wall -Wextra -Werror`.
-- A Swift UIKit consumer linked the package and existing ARM64 Simulator engine
-  archives, installed, and ran on an iPhone 16 Pro / iOS 18.6 Simulator. Opening a
-  new persistent directory, returning Unix socket connection options, closing the
-  engine, repeated close, and rejecting connection-options access after close all
-  passed. The app recorded `Stopped` after engine shutdown.
-- The consumer passed ten SQL checks through the returned socket: text
-  expressions, schema creation, prepared insert/read/update/delete, text typed
-  reads, rollback, commit, and a persistent run counter. Values included Unicode,
-  binary bytes, NULL, and the maximum unsigned 64-bit integer.
-- After clean shutdown and application-process restart, the same directory's
-  counter advanced from 0 to 1 and then from 1 to 2. The final consumer binary
-  (iOS Simulator, minimum iOS 18.0, SDK 18.5) passed the same checks again and
-  advanced the counter to 3.
-- The external SQL client required a local compatibility patch for legacy MySQL
-  metadata EOF packets and capability negotiation; its ten packet regression tests
-  passed. The client, its patch and the consumer source remain outside this
-  repository, so this does not establish compatibility with an unmodified
-  third-party Swift SQL driver.
-
-Rechecked on 2026-10-08 with macOS 27.0, Xcode 27.0 and the iOS 27.0 SDKs after the
-adapter moved to `lib/src/ios` and the tests to `ios/`:
-`RUN_HOST_TEST=1 BUILD_SWIFT_PACKAGE=1 bash ios/build.sh` built and checked both
-static libraries and the XCFramework, passed the six host lifecycle tests, and built
-the Swift package for generic iOS devices and Simulators. No engine was linked or
-run in this recheck.
-
-Physical iPhones and long-running stability are not verified. Repeated lifecycle
-cycles within one process are unsupported by the current iOS runtime.
+Validated on 2026-10-14 with macOS 27.0, Xcode 27.0, Swift 6.4 and the iOS 27.0
+SDK, against a Simulator framework built from seekdb `e49e515fe` (branch
+`feature/ios-swift`, 11 exports): `ios/build.sh` packaged it, and the 14 Swift tests
+passed on an iPhone 17 Simulator with iOS 27.0, the in-process engine test in 12.4
+seconds. `ios/build.sh` rejected the framework header from before that commit,
+whose `SeekdbConnectionOptions` had four fields. No device framework was built.
 
 ## SeekDB.framework probe
 
 `framework_probe/` tests the dynamic `SeekDB.framework` that oceanbase/seekdb builds
 with `./build.sh release --ios [--simulator] --init --make` (before seekdb `9a35937b0`,
-`build.iphone.sh release [--simulator] --target seekdb_ios_framework`), not the
-adapter in `lib/src/ios`. Since seekdb `2b17e74e7` that framework only runs the engine:
-its `seekdb.h` declares `seekdb_open`, `seekdb_close` and `seekdb_connection_options`,
-and it also exports seven iOS lifecycle functions. Running SQL is the App's job, with
+`build.iphone.sh release [--simulator] --target seekdb_ios_framework`). Since seekdb
+`2b17e74e7` that framework only runs the engine, and since seekdb `e49e515fe` its
+`seekdb.h` declares `seekdb_open`, `seekdb_last_open_error`, `seekdb_close` and
+`seekdb_connection_options` as `lib/include/seekdb/seekdb.h` does; it also exports
+seven iOS lifecycle functions. Running SQL is the App's job, with
 a MySQL-protocol client of its choice. The probe App links UIKit and its own
 Connector/C, loads the three lifecycle functions and five iOS diagnostic functions from
 the embedded framework with `dlopen`/`dlsym`, and runs SQL with Connector/C over the

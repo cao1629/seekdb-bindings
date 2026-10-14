@@ -11,9 +11,10 @@ Applications choose and configure their own MySQL-protocol client.
 ## Package layout
 
 The root `Package.swift` exposes the `SeekDB` library. Its Swift sources and tests
-live under `swift/`. The `CSeekDB` module is `lib/include`; on macOS and Linux it
-links the existing `libseekdb` shared library, and on iOS it compiles the
-in-process libseekdb in `lib/src/ios`.
+live under `swift/`. `CSeekDB` is a module map over `lib/include/seekdb/seekdb.h`.
+On macOS and Linux the `SeekDB` target links the existing `libseekdb` shared
+library; on iOS it links oceanbase/seekdb's `SeekDB.framework` through
+`build/ios/SeekDBEngine.xcframework`, which `ios/build.sh` creates.
 
 ```swift
 // In a consuming package's Package.swift:
@@ -101,7 +102,8 @@ find libseekdb. Append `--build-system native`, for example
 `Tests/SeekDBTests` covers public validation, native diagnostics, copied UTF-8
 values, closed-handle access, idempotence, failed-close ownership, deinitialization,
 and concurrent options/close. The desktop smoke test calls the real C API's
-parameter validation without starting an engine.
+parameter validation without starting an engine. On iOS one test starts the
+in-process engine; see the [iOS instructions](../ios/README.md).
 
 Validated on 2026-09-29 with Apple Silicon macOS 15.5, Xcode 16.4 and Swift 6.1.2:
 the fourteen Swift tests passed against a macOS `libseekdb.dylib` built from this
@@ -109,10 +111,12 @@ repository with CMake, with Python and C++ test targets disabled, external zlib 
 no engine binary, including a real C error-path call with Unicode parameter values;
 no test server was required. Rechecked on 2026-10-08 with Xcode 27.0 and Swift 6.4:
 the same fourteen tests passed with `--build-system native` before and after the iOS
-files moved out of `swift/`.
+files moved out of `swift/`. Rechecked on 2026-10-14 after `CSeekDB` became a module map
+over the public header: the fourteen tests passed again on macOS 27.0 with Xcode 27.0's
+Swift 6.4 and `--build-system native`.
 
 ## iOS
 
 On iOS the same API runs the engine inside the application instead of a separate
-process. That implementation is in `lib/src/ios`; the iOS build, packaging, runtime
-constraints and tests remain in `ios/`. See [iOS instructions](../ios/README.md).
+process, through seekdb's `SeekDB.framework`. Its packaging, runtime constraints
+and tests are in `ios/`. See [iOS instructions](../ios/README.md).

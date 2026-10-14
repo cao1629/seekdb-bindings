@@ -72,6 +72,28 @@ final class SeekDBTests: XCTestCase {
     }
     #endif
 
+    #if os(iOS)
+    func testInProcessEngineServesMySQLUntilItsOnlyClose() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("seekdb-swift-\(UUID().uuidString)").path
+        let db = try SeekDB.open(directory)
+        let options = try db.connectionOptions()
+        XCTAssertEqual(options.transport, "unix_socket")
+        XCTAssertEqual(options.port, 0)
+        XCTAssertNil(options.host)
+        XCTAssertNil(options.named_pipe)
+        XCTAssertEqual(options.user, "root")
+        XCTAssertEqual(try mysqlProtocolVersion(at: XCTUnwrap(options.unix_socket)), 10)
+        try db.close()
+        XCTAssertThrowsError(try SeekDB.open(directory)) { error in
+            guard case SeekDBError.native(operation: .open, code: -1, message: let message) = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertTrue(message.contains("restart the App"), message)
+        }
+    }
+    #endif
+
     func testOpenFailurePreservesNativeCodeAndMessage() {
         let native = MockNativeAPI(openCode: -17)
         native.openError = "启动失败🦉"
@@ -321,3 +343,32 @@ private final class MockNativeAPI: NativeAPI, @unchecked Sendable {
         }
     }
 }
+
+#if os(iOS)
+private func mysqlProtocolVersion(at path: String) throws -> UInt8 {
+    let client = socket(AF_UNIX, SOCK_STREAM, 0)
+    guard client >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    defer { close(client) }
+    var address = sockaddr_un()
+    address.sun_family = sa_family_t(AF_UNIX)
+    let bytes = Array(path.utf8)
+    guard bytes.count < MemoryLayout.size(ofValue: address.sun_path) else { throw POSIXError(.ENAMETOOLONG) }
+    withUnsafeMutableBytes(of: &address.sun_path) { $0.copyBytes(from: bytes) }
+    let connected = withUnsafePointer(to: &address) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            connect(client, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+        }
+    }
+    guard connected == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    var header = [UInt8](repeating: 0, count: 5)
+    var received = 0
+    while received < header.count {
+        let count = header.withUnsafeMutableBytes { buffer in
+            recv(client, buffer.baseAddress! + received, buffer.count - received, 0)
+        }
+        guard count > 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .ECONNRESET) }
+        received += count
+    }
+    return header[4]
+}
+#endif

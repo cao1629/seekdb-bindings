@@ -115,17 +115,17 @@ public:
     SeekdbConnectionOptions options{};
     if (!check(@"root Unix socket options", driver_.seekdb_connection_options(handle_, &options) == SEEKDB_SUCCESS
         && strcmp(options.transport, "unix_socket") == 0 && strcmp(options.user, "root") == 0
-        && options.endpoint != nullptr && strlen(options.endpoint) < 104
+        && options.unix_socket != nullptr && strlen(options.unix_socket) < 104
         && options.port == 0)) { finish(false, before); return; }
     SeekdbHandle second = nullptr;
     if (!check(@"share existing engine", driver_.seekdb_open(base.fileSystemRepresentation, nullptr, &second) == SEEKDB_SUCCESS)) { finish(false, before); return; }
     if (!check(@"close shared handle", driver_.seekdb_close(second) == SEEKDB_SUCCESS
         && driver_.seekdb_ios_get_state() == SEEKDB_IOS_RUNNING)) { finish(false, before); return; }
     connection_ = mysql_init(nullptr);
-    if (!check(@"connect root empty password", connect_socket_client(connection_, options.endpoint, nullptr))) { finish(false, before); return; }
+    if (!check(@"connect root empty password", connect_socket_client(connection_, options.unix_socket, nullptr))) { finish(false, before); return; }
     bool passed = sql_suite();
     if (passed) {
-      passed = run_framework_stability(connection_, options.endpoint, report_, [this] { save(); });
+      passed = run_framework_stability(connection_, options.unix_socket, report_, [this] { save(); });
     }
     finish(passed, before);
   }

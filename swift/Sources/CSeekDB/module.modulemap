@@ -1,0 +1,4 @@
+module CSeekDB [system] {
+    header "../../../lib/include/seekdb/seekdb.h"
+    export *
+}

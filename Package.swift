@@ -13,32 +13,37 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import Foundation
 import PackageDescription
+
+let engineFramework = "build/ios/SeekDBEngine.xcframework"
+let hasEngineFramework = FileManager.default.fileExists(atPath: Context.packageDirectory + "/" + engineFramework)
+
+var seekdbDependencies: [Target.Dependency] = ["CSeekDB"]
+var engineTargets: [Target] = []
+if hasEngineFramework {
+    seekdbDependencies.append(.target(name: "SeekDBEngine", condition: .when(platforms: [.iOS])))
+    engineTargets.append(.binaryTarget(name: "SeekDBEngine", path: engineFramework))
+}
 
 let package = Package(
     name: "seekdb-bindings",
     platforms: [.macOS(.v13), .iOS("18.0")],
     products: [.library(name: "SeekDB", targets: ["SeekDB"])],
     targets: [
+        .systemLibrary(name: "CSeekDB", path: "swift/Sources/CSeekDB"),
         .target(
-            name: "CSeekDB",
-            path: "lib",
-            sources: ["src/ios"],
-            publicHeadersPath: "include",
+            name: "SeekDB",
+            dependencies: seekdbDependencies,
+            path: "swift/Sources/SeekDB",
             linkerSettings: [
                 .linkedLibrary("seekdb", .when(platforms: [.macOS, .linux]))
             ]
-        ),
-        .target(
-            name: "SeekDB",
-            dependencies: ["CSeekDB"],
-            path: "swift/Sources/SeekDB"
         ),
         .testTarget(
             name: "SeekDBTests",
             dependencies: ["SeekDB"],
             path: "swift/Tests/SeekDBTests"
         )
-    ],
-    cLanguageStandard: .c11
+    ] + engineTargets
 )
