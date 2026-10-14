@@ -71,7 +71,9 @@ SDK, against a Simulator framework built from seekdb `e49e515fe` (branch
 `feature/ios-swift`, 11 exports): `ios/build.sh` packaged it, and the 14 Swift tests
 passed on an iPhone 17 Simulator with iOS 27.0, the in-process engine test in 12.4
 seconds. `ios/build.sh` rejected the framework header from before that commit,
-whose `SeekdbConnectionOptions` had four fields. No device framework was built.
+whose `SeekdbConnectionOptions` had four fields. The probe below, at `9d4ddff`,
+passed two process runs against the same framework rebuilt at `e49e515fe` (51/51
+each, `previous_runs` 18 to 19). No device framework was built.
 
 ## SeekDB.framework probe
 
