@@ -19,20 +19,20 @@
 extern "C" {
 #endif
 
-enum seekdb_ios_state {
-    SEEKDB_IOS_IDLE = 0,
-    SEEKDB_IOS_STARTING = 1,
-    SEEKDB_IOS_RUNNING = 2,
-    SEEKDB_IOS_STOPPING = 3,
-    SEEKDB_IOS_STOPPED = 4,
-    SEEKDB_IOS_FAILED = 5
+enum seekdb_in_process_state {
+    SEEKDB_IN_PROCESS_IDLE = 0,
+    SEEKDB_IN_PROCESS_STARTING = 1,
+    SEEKDB_IN_PROCESS_RUNNING = 2,
+    SEEKDB_IN_PROCESS_STOPPING = 3,
+    SEEKDB_IN_PROCESS_STOPPED = 4,
+    SEEKDB_IN_PROCESS_FAILED = 5
 };
 
-enum seekdb_ios_state seekdb_ios_get_state(void);
-unsigned int seekdb_ios_get_cleanup_status(void);
-int seekdb_ios_get_cleanup_error(void);
-const char *seekdb_ios_get_build_id(void);
-const char *seekdb_ios_get_hook_mode(void);
+enum seekdb_in_process_state seekdb_in_process_get_state(void);
+unsigned int seekdb_in_process_get_cleanup_status(void);
+int seekdb_in_process_get_cleanup_error(void);
+const char *seekdb_in_process_get_build_id(void);
+const char *seekdb_in_process_get_hook_mode(void);
 
 #ifdef __cplusplus
 }

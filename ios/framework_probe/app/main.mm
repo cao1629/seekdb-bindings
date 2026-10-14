@@ -9,7 +9,7 @@
 #include <pthread.h>
 #include <mysql.h>
 #include "seekdb.h"
-#include "seekdb_ios.h"
+#include "seekdb_in_process.h"
 
 #include "client.h"
 #include "driver.h"
@@ -43,9 +43,9 @@ public:
       report_[@"home"] = NSHomeDirectory();
       const char *environment_home = getenv("HOME");
       report_[@"environment_home"] = environment_home ? [NSString stringWithUTF8String:environment_home] : @"missing";
-      if (driver_.seekdb_ios_get_state != nullptr) {
-        report_[@"engine_state"] = @(driver_.seekdb_ios_get_state());
-        report_[@"cleanup_error"] = @(driver_.seekdb_ios_get_cleanup_error());
+      if (driver_.seekdb_in_process_get_state != nullptr) {
+        report_[@"engine_state"] = @(driver_.seekdb_in_process_get_state());
+        report_[@"cleanup_error"] = @(driver_.seekdb_in_process_get_cleanup_error());
       }
       if (connection_ != nullptr) {
         report_[@"mysql_errno"] = @(mysql_errno(connection_));
@@ -99,12 +99,12 @@ public:
 #define LOAD(name) driver_.name = reinterpret_cast<decltype(driver_.name)>(dlsym(library_, #name)); \
     if (!check(@"dlsym " #name, driver_.name != nullptr)) return;
     LOAD(seekdb_open) LOAD(seekdb_close) LOAD(seekdb_connection_options)
-    LOAD(seekdb_ios_get_state) LOAD(seekdb_ios_get_cleanup_status)
-    LOAD(seekdb_ios_get_cleanup_error) LOAD(seekdb_ios_get_build_id) LOAD(seekdb_ios_get_hook_mode)
+    LOAD(seekdb_in_process_get_state) LOAD(seekdb_in_process_get_cleanup_status)
+    LOAD(seekdb_in_process_get_cleanup_error) LOAD(seekdb_in_process_get_build_id) LOAD(seekdb_in_process_get_hook_mode)
 #undef LOAD
-    report_[@"build_id"] = [NSString stringWithUTF8String:driver_.seekdb_ios_get_build_id()];
-    report_[@"hook_mode"] = [NSString stringWithUTF8String:driver_.seekdb_ios_get_hook_mode()];
-    if (!check(@"production hooks disabled", strcmp(driver_.seekdb_ios_get_hook_mode(), "disabled") == 0)) return;
+    report_[@"build_id"] = [NSString stringWithUTF8String:driver_.seekdb_in_process_get_build_id()];
+    report_[@"hook_mode"] = [NSString stringWithUTF8String:driver_.seekdb_in_process_get_hook_mode()];
+    if (!check(@"production hooks disabled", strcmp(driver_.seekdb_in_process_get_hook_mode(), "disabled") == 0)) return;
     NSString *base = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/framework-db"];
     char before[4096];
     if (!check(@"capture cwd", getcwd(before, sizeof(before)) != nullptr)) return;
@@ -120,7 +120,7 @@ public:
     SeekdbHandle second = nullptr;
     if (!check(@"share existing engine", driver_.seekdb_open(base.fileSystemRepresentation, nullptr, &second) == SEEKDB_SUCCESS)) { finish(false, before); return; }
     if (!check(@"close shared handle", driver_.seekdb_close(second) == SEEKDB_SUCCESS
-        && driver_.seekdb_ios_get_state() == SEEKDB_IOS_RUNNING)) { finish(false, before); return; }
+        && driver_.seekdb_in_process_get_state() == SEEKDB_IN_PROCESS_RUNNING)) { finish(false, before); return; }
     connection_ = mysql_init(nullptr);
     if (!check(@"connect root empty password", connect_socket_client(connection_, options.unix_socket, nullptr))) { finish(false, before); return; }
     bool passed = sql_suite();
@@ -196,8 +196,8 @@ private:
     success = check(@"close and join engine", driver_.seekdb_close(handle_) == 0) && success;
     handle_ = nullptr;
     char after[4096];
-    success = check(@"stopped and cleaned up", driver_.seekdb_ios_get_state() == SEEKDB_IOS_STOPPED
-      && driver_.seekdb_ios_get_cleanup_status() == 7 && driver_.seekdb_ios_get_cleanup_error() == 0
+    success = check(@"stopped and cleaned up", driver_.seekdb_in_process_get_state() == SEEKDB_IN_PROCESS_STOPPED
+      && driver_.seekdb_in_process_get_cleanup_status() == 7 && driver_.seekdb_in_process_get_cleanup_error() == 0
       && getcwd(after, sizeof(after)) != nullptr && strcmp(before, after) == 0) && success;
     SeekdbHandle retry = nullptr;
     success = check(@"one startup per process", driver_.seekdb_open("/unused", nullptr, &retry) == SEEKDB_INTERNAL_ERROR

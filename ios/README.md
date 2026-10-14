@@ -67,13 +67,15 @@ and checks that a second start in the same process is refused with its
 diagnostic. The framework itself is also tested by the probe below.
 
 Validated on 2026-10-14 with macOS 27.0, Xcode 27.0, Swift 6.4 and the iOS 27.0
-SDK, against a Simulator framework built from seekdb `e49e515fe` (branch
-`feature/ios-swift`, 11 exports): `ios/build.sh` packaged it, and the 14 Swift tests
-passed on an iPhone 17 Simulator with iOS 27.0, the in-process engine test in 12.4
-seconds. `ios/build.sh` rejected the framework header from before that commit,
-whose `SeekdbConnectionOptions` had four fields. The probe below, at `9d4ddff`,
-passed two process runs against the same framework rebuilt at `e49e515fe` (51/51
-each, `previous_runs` 18 to 19). No device framework was built.
+SDK, against Device and Simulator frameworks built from seekdb `7242c9e6c` (branch
+`feature/ios-swift`, 11 exports): `ios/build.sh` packaged both, and the 14 Swift tests
+passed on an iPhone 17 Simulator with iOS 27.0, the in-process engine test in 12.3
+seconds. On the same Simulator, a separate Swift package that depends on this one by
+local path opened the engine through the `SeekDB` product, read its connection
+options and closed it. `ios/build.sh` rejected the framework header from before seekdb
+`e49e515fe`, whose `SeekdbConnectionOptions` had four fields. The probe below passed
+two process runs against the Simulator framework (51/51 each, `previous_runs` 20 to
+21). The Device framework was built and verified but not run on a device.
 
 ## SeekDB.framework probe
 
@@ -83,14 +85,15 @@ with `./build.sh release --ios [--simulator] --init --make` (before seekdb `9a35
 `2b17e74e7` that framework only runs the engine, and since seekdb `e49e515fe` its
 `seekdb.h` declares `seekdb_open`, `seekdb_last_open_error`, `seekdb_close` and
 `seekdb_connection_options` as `lib/include/seekdb/seekdb.h` does; it also exports
-seven iOS lifecycle functions. Running SQL is the App's job, with
+the seven functions of seekdb's in-process runtime, named `seekdb_in_process_*` since
+seekdb `7242c9e6c` and `seekdb_ios_*` before. Running SQL is the App's job, with
 a MySQL-protocol client of its choice. The probe App links UIKit and its own
-Connector/C, loads the three lifecycle functions and five iOS diagnostic functions from
-the embedded framework with `dlopen`/`dlsym`, and runs SQL with Connector/C over the
+Connector/C, loads the three lifecycle functions and five runtime diagnostic functions
+from the embedded framework with `dlopen`/`dlsym`, and runs SQL with Connector/C over the
 Unix socket that `seekdb_connection_options` returns. The framework ships no header for
-the iOS functions, so `framework_probe/app/seekdb_ios.h` declares the five the probe
-loads, matching `src/observer/ios/seekdb_ios.h` in seekdb. These tests moved here from
-seekdb's `unittest/ios_build` on 2026-10-10.
+the runtime functions, so `framework_probe/app/seekdb_in_process.h` declares the five the
+probe loads, matching `src/observer/in_process/seekdb_in_process.h` in seekdb. These
+tests moved here from seekdb's `unittest/ios_build` on 2026-10-10.
 
 `framework_probe/mariadb-connector-c/` is MariaDB Connector/C 3.4.8 (upstream revision
 `46880b003653a000e9588bd73c8b1dd65088c686`), unmodified and licensed under
