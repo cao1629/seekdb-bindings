@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import CSeekDB
+@_implementationOnly import CSeekDB
 
 /// Native strings are borrowed from the handle until its next close.
 internal struct NativeConnectionOptions {

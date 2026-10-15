@@ -35,6 +35,7 @@ let package = Package(
         .target(
             name: "SeekDB",
             dependencies: seekdbDependencies,
+            swiftSettings: [.enableExperimentalFeature("CheckImplementationOnly")],
             linkerSettings: [
                 .linkedLibrary("seekdb", .when(platforms: [.macOS, .linux]))
             ]

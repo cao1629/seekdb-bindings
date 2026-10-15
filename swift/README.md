@@ -17,6 +17,14 @@ over the repository's `lib/include/seekdb/seekdb.h`. On macOS and Linux the
 oceanbase/seekdb's `SeekDB.framework` through the repository's
 `build/ios/SeekDBEngine.xcframework`, which `ios/build.sh` creates.
 
+`NativeAPI.swift` imports `CSeekDB` with `@_implementationOnly`. With a plain or
+`internal import`, every module that imports `SeekDB` must also find the `CSeekDB`
+module map, because clients of a module built without library evolution load its
+imports, and compiling without it fails with "missing required module 'CSeekDB'".
+The `SeekDB` target enables the experimental feature `CheckImplementationOnly`, which
+makes storing a `CSeekDB` type in a property a compile error rather than a warning:
+clients would compute such a type's layout without seeing `CSeekDB`.
+
 ```swift
 // In a consuming package's Package.swift:
 dependencies: [
