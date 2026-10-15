@@ -11,7 +11,7 @@ Applications choose and configure their own MySQL-protocol client.
 
 This directory is a SwiftPM package: `Package.swift` exposes the `SeekDB` library
 from `Sources/SeekDB`, with tests in `Tests/SeekDBTests`. The engine is seekdb's
-`SeekDB.framework`, which `ios/build.sh` packages as the repository's
+`SeekDB.framework`, which `build.sh` in this directory packages as the repository's
 `build/ios/SeekDBEngine.xcframework`; when that exists, the package adds it as the
 binary target `SeekDBEngine`. It holds iOS slices only for now; packaging, runtime
 constraints and tests are in the [iOS instructions](../ios/README.md).

@@ -22,7 +22,7 @@ bundle=org.seekdb.example
 derived="$root/build/ios/example"
 
 if [[ ! -d "$root/build/ios/SeekDBEngine.xcframework" ]]; then
-  echo "Run SEEKDB_DIR=<seekdb checkout> bash ios/build.sh first" >&2
+  echo "Run SEEKDB_DIR=<seekdb checkout> bash swift/build.sh first" >&2
   exit 1
 fi
 xcodegen generate --spec "$here/project.yml" --project "$here" --quiet

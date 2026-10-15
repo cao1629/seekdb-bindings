@@ -16,17 +16,17 @@ out-of-process libseekdb and are not available here. The Swift API lives in
 
 Requires macOS with full Xcode and the iOS SDKs. The scripts use
 `/Applications/Xcode.app/Contents/Developer` unless `DEVELOPER_DIR` is set. Build
-the framework in a seekdb checkout, then package it here:
+the framework in a seekdb checkout, then package it with `swift/build.sh`:
 
 ```sh
 cd /path/to/seekdb
 ./build.sh release --ios --init --make -j8               # device
 ./build.sh release --ios --simulator --init --make -j8   # Simulator
 cd /path/to/seekdb-bindings
-SEEKDB_DIR=/path/to/seekdb bash ios/build.sh
+SEEKDB_DIR=/path/to/seekdb bash swift/build.sh
 ```
 
-`ios/build.sh` puts each `SeekDB.framework` it finds in `SEEKDB_DIR` (device,
+`swift/build.sh` puts each `SeekDB.framework` it finds in `SEEKDB_DIR` (device,
 Simulator or both) into `build/ios/SeekDBEngine.xcframework`, after checking each
 framework's platform. When that XCFramework exists, `swift/Package.swift` adds it as
 the binary target `SeekDBEngine` of the `SeekDB` product, and the `CSeekDB` module
@@ -72,7 +72,7 @@ another directory is refused with its diagnostic. The example App below runs
 Validated on 2026-10-15 with macOS 27.0, Xcode 27.0, Swift 6.4 and the iOS 27.0
 SDK, against Device and Simulator frameworks built from seekdb `9786f15d9` (branch
 `feature/ios-swift`, 4 exports), with the package in `swift/` reading the framework's
-own header: `ios/build.sh` packaged both and built the package for each with
+own header: `swift/build.sh` packaged both and built the package for each with
 `BUILD_SWIFT_PACKAGE=1`, and the
 14 Swift tests passed on an iPhone 17 Simulator with iOS 27.0, the in-process
 engine test in 1.0 second (about 14 seconds before, when close still stopped the
@@ -103,7 +103,7 @@ for the Simulator; to run on a device, open the generated `example/SeekDBExample
 in Xcode and choose a team. `example/run.sh` generates the project, builds the App for
 a Simulator into `build/ios/example`, installs and launches it, and waits up to 300
 seconds for `select1.json`; it fails unless the result is 1. Package the framework
-with `ios/build.sh` first.
+with `swift/build.sh` first.
 
 ```sh
 brew install xcodegen
