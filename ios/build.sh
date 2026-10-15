@@ -68,12 +68,12 @@ xcodebuild -create-xcframework "${frameworks[@]}" -output "$output"
 
 if [[ ${BUILD_SWIFT_PACKAGE:-0} == 1 ]]; then
   for destination in "${destinations[@]}"; do
-    (cd "$root" && xcodebuild -scheme seekdb-bindings -destination "$destination" \
+    (cd "$root/swift" && xcodebuild -scheme seekdb-bindings -destination "$destination" \
       -derivedDataPath "$out/xcode" CODE_SIGNING_ALLOWED=NO build)
   done
 fi
 
 if [[ -n ${TEST_SIMULATOR:-} ]]; then
-  (cd "$root" && xcodebuild -scheme seekdb-bindings -destination "platform=iOS Simulator,id=$TEST_SIMULATOR" \
+  (cd "$root/swift" && xcodebuild -scheme seekdb-bindings -destination "platform=iOS Simulator,id=$TEST_SIMULATOR" \
     -derivedDataPath "$out/xcode" test)
 fi

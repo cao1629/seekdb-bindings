@@ -32,6 +32,6 @@ if [[ ! -f "$native/$library" ]]; then
     exit 2
 fi
 native=$(cd "$native" && pwd)
-exec swift "$action" --package-path "$root" \
+exec swift "$action" --package-path "$root/swift" \
     -Xlinker -L -Xlinker "$native" \
     -Xlinker -rpath -Xlinker "$native" "$@"

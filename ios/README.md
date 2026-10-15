@@ -28,7 +28,7 @@ SEEKDB_DIR=/path/to/seekdb bash ios/build.sh
 Simulator or both) into `build/ios/SeekDBEngine.xcframework`. It first checks each
 framework's platform and that its `seekdb.h` declares the same
 `SeekdbConnectionOptions` and lifecycle functions as `lib/include/seekdb/seekdb.h`.
-When that XCFramework exists, the root `Package.swift` adds it as the binary target
+When that XCFramework exists, `swift/Package.swift` adds it as the binary target
 `SeekDBEngine` and links it into the `SeekDB` product on iOS only; macOS and Linux
 keep linking libseekdb. `BUILD_SWIFT_PACKAGE=1` also builds the package with
 `xcodebuild` for each packaged platform, and `TEST_SIMULATOR=<simulator id>` runs
@@ -36,8 +36,8 @@ the Swift tests on that Simulator.
 
 ## Use
 
-Swift apps depend on the root package's `SeekDB` product, as shown in the
-[Swift bindings](../swift/README.md); Xcode embeds and signs `SeekDB.framework`
+Swift apps depend on the `SeekDB` product of the package in `swift/`, as shown in
+the [Swift bindings](../swift/README.md); Xcode embeds and signs `SeekDB.framework`
 with the app. Apps that call the C API directly can embed the framework and
 include its `Headers/seekdb.h`.
 
@@ -71,9 +71,11 @@ another directory is refused with its diagnostic. The example App below runs
 
 Validated on 2026-10-15 with macOS 27.0, Xcode 27.0, Swift 6.4 and the iOS 27.0
 SDK, against Device and Simulator frameworks built from seekdb `9786f15d9` (branch
-`feature/ios-swift`, 4 exports): `ios/build.sh` packaged both, and the 14 Swift tests
-passed on an iPhone 17 Simulator with iOS 27.0, the in-process engine test in 1.0
-second (about 14 seconds before, when close still stopped the engine). On the same
+`feature/ios-swift`, 4 exports), with the package in `swift/`: `ios/build.sh`
+packaged both and built the package for each with `BUILD_SWIFT_PACKAGE=1`, and the
+14 Swift tests passed on an iPhone 17 Simulator with iOS 27.0, the in-process
+engine test in 1.0 second (about 14 seconds before, when close still stopped the
+engine). On the same
 Simulator, a separate Swift package that depends on this one by local path opened the
 engine through the `SeekDB` product, read its connection options and closed it, and
 neither test process crashed when it exited with the engine still running. The
@@ -95,9 +97,9 @@ or `{"error": ...}` when a step fails. MySQLNIO always assumes the
 `MySQLCommand` that reads a text result set either way.
 
 The Xcode project is generated from `example/project.yml` with
-[XcodeGen](https://github.com/yonaskolb/XcodeGen). It depends on this repository by
-local path and on MySQLNIO and SwiftNIO from GitHub, and it signs ad hoc for the
-Simulator; to run on a device, open the generated `example/SeekDBExample.xcodeproj`
+[XcodeGen](https://github.com/yonaskolb/XcodeGen). It depends on the package in
+`swift/` by local path and on MySQLNIO and SwiftNIO from GitHub, and it signs ad hoc
+for the Simulator; to run on a device, open the generated `example/SeekDBExample.xcodeproj`
 in Xcode and choose a team. `example/run.sh` generates the project, builds the App for
 a Simulator into `build/ios/example`, installs and launches it, and waits up to 300
 seconds for `select1.json`; it fails unless the result is 1. Package the framework

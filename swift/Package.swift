@@ -16,7 +16,7 @@
 import Foundation
 import PackageDescription
 
-let engineFramework = "build/ios/SeekDBEngine.xcframework"
+let engineFramework = "../build/ios/SeekDBEngine.xcframework"
 let hasEngineFramework = FileManager.default.fileExists(atPath: Context.packageDirectory + "/" + engineFramework)
 
 var seekdbDependencies: [Target.Dependency] = ["CSeekDB"]
@@ -31,19 +31,17 @@ let package = Package(
     platforms: [.macOS(.v13), .iOS("18.0")],
     products: [.library(name: "SeekDB", targets: ["SeekDB"])],
     targets: [
-        .systemLibrary(name: "CSeekDB", path: "swift/Sources/CSeekDB"),
+        .systemLibrary(name: "CSeekDB"),
         .target(
             name: "SeekDB",
             dependencies: seekdbDependencies,
-            path: "swift/Sources/SeekDB",
             linkerSettings: [
                 .linkedLibrary("seekdb", .when(platforms: [.macOS, .linux]))
             ]
         ),
         .testTarget(
             name: "SeekDBTests",
-            dependencies: ["SeekDB"],
-            path: "swift/Tests/SeekDBTests"
+            dependencies: ["SeekDB"]
         )
     ] + engineTargets
 )

@@ -2,7 +2,7 @@
 
 `Sources/SeekDB` contains the platform-neutral API (`SeekDB`, `ConnectionOptions`,
 `SeekDBError`). `NativeAPI.swift` is the common bridge to the C API in
-`lib/include/seekdb/seekdb.h`, which the root `Package.swift` exposes to Swift as
+`lib/include/seekdb/seekdb.h`, which `Package.swift` exposes to Swift as
 the `CSeekDB` module; it has no iOS-specific code. The API follows the Java
 bindings. It has no third-party Swift dependencies and does not include a SQL
 client, construct connection URLs, execute queries, or decode result sets.
@@ -10,28 +10,31 @@ Applications choose and configure their own MySQL-protocol client.
 
 ## Package layout
 
-The root `Package.swift` exposes the `SeekDB` library. Its Swift sources and tests
-live under `swift/`. `CSeekDB` is a module map over `lib/include/seekdb/seekdb.h`.
-On macOS and Linux the `SeekDB` target links the existing `libseekdb` shared
-library; on iOS it links oceanbase/seekdb's `SeekDB.framework` through
+This directory is a SwiftPM package: `Package.swift` exposes the `SeekDB` library
+from `Sources/SeekDB`, with tests in `Tests/SeekDBTests`. `CSeekDB` is a module map
+over the repository's `lib/include/seekdb/seekdb.h`. On macOS and Linux the
+`SeekDB` target links the existing `libseekdb` shared library; on iOS it links
+oceanbase/seekdb's `SeekDB.framework` through the repository's
 `build/ios/SeekDBEngine.xcframework`, which `ios/build.sh` creates.
 
 ```swift
 // In a consuming package's Package.swift:
 dependencies: [
-    .package(path: "../seekdb-bindings")
+    .package(path: "../seekdb-bindings/swift")
 ],
 targets: [
     .target(name: "MyApp", dependencies: [
-        .product(name: "SeekDB", package: "seekdb-bindings")
+        .product(name: "SeekDB", package: "swift")
     ])
 ]
 ```
 
-The root manifest also provides the entry point for Git-URL package consumption
-once a revision containing this implementation is published. A native engine is
-still required, just as the Java JAR requires its matching native components.
-The package does not download engines or change process search paths.
+SwiftPM names a package added by path after its directory, hence `package: "swift"`.
+It reads a Git-URL dependency's `Package.swift` only from the repository root, so
+this package is used by path; Git-URL consumption will need a separate repository
+with its own root manifest. A native engine is still required, just as the Java
+JAR requires its matching native components. The package does not download
+engines or change process search paths.
 
 ## API
 
@@ -113,7 +116,8 @@ no test server was required. Rechecked on 2026-10-08 with Xcode 27.0 and Swift 6
 the same fourteen tests passed with `--build-system native` before and after the iOS
 files moved out of `swift/`. Rechecked on 2026-10-14 after `CSeekDB` became a module map
 over the public header: the fourteen tests passed again on macOS 27.0 with Xcode 27.0's
-Swift 6.4 and `--build-system native`.
+Swift 6.4 and `--build-system native`. Rechecked on 2026-10-15 after `Package.swift`
+moved into `swift/`: the fourteen tests passed again the same way.
 
 ## iOS
 
