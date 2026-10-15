@@ -23,14 +23,10 @@ enum seekdb_in_process_state {
     SEEKDB_IN_PROCESS_IDLE = 0,
     SEEKDB_IN_PROCESS_STARTING = 1,
     SEEKDB_IN_PROCESS_RUNNING = 2,
-    SEEKDB_IN_PROCESS_STOPPING = 3,
-    SEEKDB_IN_PROCESS_STOPPED = 4,
-    SEEKDB_IN_PROCESS_FAILED = 5
+    SEEKDB_IN_PROCESS_FAILED = 3
 };
 
 enum seekdb_in_process_state seekdb_in_process_get_state(void);
-unsigned int seekdb_in_process_get_cleanup_status(void);
-int seekdb_in_process_get_cleanup_error(void);
 const char *seekdb_in_process_get_build_id(void);
 
 #ifdef __cplusplus

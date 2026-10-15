@@ -28,7 +28,7 @@ public:
     report_[@"complete"] = @NO;
     report_[@"probe_source_revision"] = @PROBE_SOURCE_REVISION;
     report_[@"run_id"] = NSUUID.UUID.UUIDString;
-    report_[@"framework_api"] = @"in_process";
+    report_[@"framework_api"] = @"in_process_resident";
     report_[@"test_transport"] = @"Connector/C over actual Unix socket";
     save();
   }
@@ -45,7 +45,6 @@ public:
       report_[@"environment_home"] = environment_home ? [NSString stringWithUTF8String:environment_home] : @"missing";
       if (driver_.seekdb_in_process_get_state != nullptr) {
         report_[@"engine_state"] = @(driver_.seekdb_in_process_get_state());
-        report_[@"cleanup_error"] = @(driver_.seekdb_in_process_get_cleanup_error());
       }
       if (connection_ != nullptr) {
         report_[@"mysql_errno"] = @(mysql_errno(connection_));
@@ -99,33 +98,30 @@ public:
 #define LOAD(name) driver_.name = reinterpret_cast<decltype(driver_.name)>(dlsym(library_, #name)); \
     if (!check(@"dlsym " #name, driver_.name != nullptr)) return;
     LOAD(seekdb_open) LOAD(seekdb_close) LOAD(seekdb_connection_options)
-    LOAD(seekdb_in_process_get_state) LOAD(seekdb_in_process_get_cleanup_status)
-    LOAD(seekdb_in_process_get_cleanup_error) LOAD(seekdb_in_process_get_build_id)
+    LOAD(seekdb_in_process_get_state) LOAD(seekdb_in_process_get_build_id)
 #undef LOAD
     report_[@"build_id"] = [NSString stringWithUTF8String:driver_.seekdb_in_process_get_build_id()];
-    NSString *base = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/framework-db"];
-    char before[4096];
-    if (!check(@"capture cwd", getcwd(before, sizeof(before)) != nullptr)) return;
+    base_ = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/framework-db"];
     const char *invalid[] = {"port", "3306", nullptr};
     SeekdbHandle bad = nullptr;
-    if (!check(@"reject TCP", driver_.seekdb_open(base.fileSystemRepresentation, invalid, &bad) == SEEKDB_INVALID_ARGUMENT && bad == nullptr)) return;
-    if (!check(@"open engine", driver_.seekdb_open(base.fileSystemRepresentation, nullptr, &handle_) == SEEKDB_SUCCESS)) return;
+    if (!check(@"reject TCP", driver_.seekdb_open(base_.fileSystemRepresentation, invalid, &bad) == SEEKDB_INVALID_ARGUMENT && bad == nullptr)) return;
+    if (!check(@"open engine", driver_.seekdb_open(base_.fileSystemRepresentation, nullptr, &handle_) == SEEKDB_SUCCESS)) return;
     SeekdbConnectionOptions options{};
     if (!check(@"root Unix socket options", driver_.seekdb_connection_options(handle_, &options) == SEEKDB_SUCCESS
         && strcmp(options.transport, "unix_socket") == 0 && strcmp(options.user, "root") == 0
         && options.unix_socket != nullptr && strlen(options.unix_socket) < 104
-        && options.port == 0)) { finish(false, before); return; }
+        && options.port == 0)) { finish(false); return; }
     SeekdbHandle second = nullptr;
-    if (!check(@"share existing engine", driver_.seekdb_open(base.fileSystemRepresentation, nullptr, &second) == SEEKDB_SUCCESS)) { finish(false, before); return; }
+    if (!check(@"share existing engine", driver_.seekdb_open(base_.fileSystemRepresentation, nullptr, &second) == SEEKDB_SUCCESS)) { finish(false); return; }
     if (!check(@"close shared handle", driver_.seekdb_close(second) == SEEKDB_SUCCESS
-        && driver_.seekdb_in_process_get_state() == SEEKDB_IN_PROCESS_RUNNING)) { finish(false, before); return; }
+        && driver_.seekdb_in_process_get_state() == SEEKDB_IN_PROCESS_RUNNING)) { finish(false); return; }
     connection_ = mysql_init(nullptr);
-    if (!check(@"connect root empty password", connect_socket_client(connection_, options.unix_socket, nullptr))) { finish(false, before); return; }
+    if (!check(@"connect root empty password", connect_socket_client(connection_, options.unix_socket, nullptr))) { finish(false); return; }
     bool passed = sql_suite();
     if (passed) {
       passed = run_framework_stability(connection_, options.unix_socket, report_, [this] { save(); });
     }
-    finish(passed, before);
+    finish(passed);
   }
 
 private:
@@ -183,23 +179,34 @@ private:
       && mysql_errno(connection_) != 0 && mysql_error(connection_)[0] != '\0');
   }
 
-  /** Close all owned objects and assert restored process state before completing the report. */
-  void finish(bool success, const char *before)
+  /** Close all owned objects and assert the engine keeps serving its directory before completing the report. */
+  void finish(bool success)
   {
     if (connection_ != nullptr) {
       mysql_close(connection_);
       connection_ = nullptr;
       success = check(@"disconnect", true) && success;
     }
-    success = check(@"close and join engine", driver_.seekdb_close(handle_) == 0) && success;
+    success = check(@"close last handle", driver_.seekdb_close(handle_) == 0) && success;
     handle_ = nullptr;
-    char after[4096];
-    success = check(@"stopped and cleaned up", driver_.seekdb_in_process_get_state() == SEEKDB_IN_PROCESS_STOPPED
-      && driver_.seekdb_in_process_get_cleanup_status() == 7 && driver_.seekdb_in_process_get_cleanup_error() == 0
-      && getcwd(after, sizeof(after)) != nullptr && strcmp(before, after) == 0) && success;
-    SeekdbHandle retry = nullptr;
-    success = check(@"one startup per process", driver_.seekdb_open("/unused", nullptr, &retry) == SEEKDB_INTERNAL_ERROR
-      && retry == nullptr) && success;
+    success = check(@"engine keeps running after close",
+      driver_.seekdb_in_process_get_state() == SEEKDB_IN_PROCESS_RUNNING) && success;
+    SeekdbHandle again = nullptr;
+    SeekdbConnectionOptions options{};
+    bool reopened = driver_.seekdb_open(base_.fileSystemRepresentation, nullptr, &again) == SEEKDB_SUCCESS
+      && driver_.seekdb_connection_options(again, &options) == SEEKDB_SUCCESS;
+    success = check(@"reopen running engine", reopened) && success;
+    if (reopened) {
+      MYSQL *client = mysql_init(nullptr);
+      int64_t one = 0;
+      success = check(@"SQL after reopen", connect_socket_client(client, options.unix_socket, nullptr)
+        && read_int64(client, "SELECT 1", one) && one == 1) && success;
+      mysql_close(client);
+      success = check(@"close reopened handle", driver_.seekdb_close(again) == 0) && success;
+    }
+    SeekdbHandle other = nullptr;
+    success = check(@"other directory rejected", driver_.seekdb_open("/unused", nullptr, &other) == SEEKDB_INTERNAL_ERROR
+      && other == nullptr) && success;
     report_[@"complete"] = @YES;
     report_[@"passed"] = @(success);
     save();
@@ -215,6 +222,7 @@ private:
 
   Driver driver_;
   void *library_ = nullptr;
+  NSString *base_ = nil;
   SeekdbHandle handle_ = nullptr;
   MYSQL *connection_ = nullptr;
   NSMutableDictionary *report_;

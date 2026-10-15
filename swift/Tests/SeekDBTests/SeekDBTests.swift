@@ -73,7 +73,7 @@ final class SeekDBTests: XCTestCase {
     #endif
 
     #if os(iOS)
-    func testInProcessEngineServesMySQLUntilItsOnlyClose() throws {
+    func testInProcessEngineKeepsServingAfterClose() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("seekdb-swift-\(UUID().uuidString)").path
         let db = try SeekDB.open(directory)
@@ -85,11 +85,16 @@ final class SeekDBTests: XCTestCase {
         XCTAssertEqual(options.user, "root")
         XCTAssertEqual(try mysqlProtocolVersion(at: XCTUnwrap(options.unix_socket)), 10)
         try db.close()
-        XCTAssertThrowsError(try SeekDB.open(directory)) { error in
+        let reopened = try SeekDB.open(directory)
+        XCTAssertEqual(try mysqlProtocolVersion(at: XCTUnwrap(reopened.connectionOptions().unix_socket)), 10)
+        try reopened.close()
+        let other = FileManager.default.temporaryDirectory
+            .appendingPathComponent("seekdb-swift-\(UUID().uuidString)").path
+        XCTAssertThrowsError(try SeekDB.open(other)) { error in
             guard case SeekDBError.native(operation: .open, code: -1, message: let message) = error else {
                 return XCTFail("Unexpected error: \(error)")
             }
-            XCTAssertTrue(message.contains("start a new process"), message)
+            XCTAssertTrue(message.contains("another directory"), message)
         }
     }
     #endif

@@ -15,10 +15,16 @@ REQUIRED_STEPS = {
 }
 LIFECYCLE_STEPS = REQUIRED_STEPS - {"value ownership", "framework allocation"}
 IN_PROCESS_STEPS = LIFECYCLE_STEPS - {"production hooks disabled"}
+IN_PROCESS_RESIDENT_STEPS = (IN_PROCESS_STEPS - {"close and join engine", "stopped and cleaned up",
+                                                 "one startup per process"}) | {
+    "close last handle", "engine keeps running after close", "reopen running engine", "SQL after reopen",
+    "close reopened handle", "other directory rejected",
+}
 FRAMEWORK_APIS = {
     None: (REQUIRED_STEPS, 30),
     "lifecycle": (LIFECYCLE_STEPS, 8),
     "in_process": (IN_PROCESS_STEPS, 7),
+    "in_process_resident": (IN_PROCESS_RESIDENT_STEPS, 5),
 }
 
 
@@ -36,7 +42,7 @@ def validate_reports(reports, revision):
             raise ValueError("Run must pass, complete and survive loading-thread TLS destruction")
         if report.get("build_id") != revision[:12]:
             raise ValueError("Run revision does not match")
-        if api != "in_process" and report.get("hook_mode") != "disabled":
+        if api in (None, "lifecycle") and report.get("hook_mode") != "disabled":
             raise ValueError("Run hook state does not match")
         if report.get("test_transport") != "Connector/C over actual Unix socket":
             raise ValueError("Run does not use the external socket client")
