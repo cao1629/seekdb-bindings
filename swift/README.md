@@ -152,3 +152,28 @@ that depends on this one by local path opened the engine through the `SeekDB`
 product, read its connection options and closed it, and neither test process
 crashed when it exited with the engine still running. The Device framework was
 built and verified but not run on a device.
+
+## Release
+
+`release.sh` prepares a release of this package in a checkout of
+[cao1629/seekdb-swift](https://github.com/cao1629/seekdb-swift), the repository that
+apps add by URL. Package the device and Simulator frameworks with `build.sh` from a
+clean seekdb tree first, then:
+
+```sh
+git clone https://github.com/cao1629/seekdb-swift.git ~/repo/seekdb-swift
+swift/release.sh 0.1.0 ~/repo/seekdb-swift
+```
+
+It checks that both slices come from the same seekdb revision built without
+uncommitted changes (`ALLOW_DIRTY=1` allows a trial run), zips the XCFramework
+without macOS `._` files into `build/release/<version>/`, computes the archive's
+checksum, and writes `Package.swift` (whose `binaryTarget(url:checksum:)` points at
+the GitHub Release asset), `Sources/`, `README.md`, `LICENSE` and `.gitignore` into
+the checkout. It then prints the commit, tag, push and `gh release create` commands
+and publishes nothing itself. Upload exactly the archive it made, since the checksum
+belongs to that file. `RELEASE_REPOSITORY` names another repository.
+
+Versions stay at 0.x while the engine comes from an unreleased seekdb branch; once
+a seekdb release ships the in-process runtime, the package takes that release's
+version.
