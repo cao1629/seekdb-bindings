@@ -10,6 +10,7 @@ EVIDENCE = Path(__file__).parent / "framework_evidence"
 REVISION = "6f902fdab24ccefdde97c991b50faf551928b604"
 LIFECYCLE_REVISION = "2b17e74e74f6513caa26c535e436d98964836ca5"
 IN_PROCESS_REVISION = "e45afec4924e7279e28ad0bb18afc4fdf336d4e0"
+IN_PROCESS_RESIDENT_REVISION = "fde2cf4c113efa62b1f12ba5e0475cb7675f6956"
 LIFECYCLE_ENTRY_POINTS = {
     "seekdb_open", "seekdb_close", "seekdb_connection_options", "seekdb_ios_get_state",
     "seekdb_ios_get_cleanup_status", "seekdb_ios_get_cleanup_error", "seekdb_ios_get_build_id",
@@ -101,6 +102,20 @@ class FrameworkEvidenceTests(unittest.TestCase):
             report["steps"].append({"name": "dlsym seekdb_in_process_get_hook_mode", "passed": True})
         with self.assertRaisesRegex(ValueError, "7 dynamically loaded"):
             validate_reports(reports, IN_PROCESS_REVISION)
+
+    def in_process_resident_reports(self):
+        return [json.loads((EVIDENCE / f"in-process-resident-20261015/simulator-run-{number}.json").read_text())
+                for number in (1, 2)]
+
+    def test_recorded_in_process_resident_runs_pass(self):
+        validate_reports(self.in_process_resident_reports(), IN_PROCESS_RESIDENT_REVISION)
+
+    def test_in_process_resident_runs_without_reopen_fail(self):
+        reports = self.in_process_resident_reports()
+        for report in reports:
+            report["steps"] = [step for step in report["steps"] if step["name"] != "reopen running engine"]
+        with self.assertRaisesRegex(ValueError, "Missing coverage"):
+            validate_reports(reports, IN_PROCESS_RESIDENT_REVISION)
 
 
 if __name__ == "__main__":

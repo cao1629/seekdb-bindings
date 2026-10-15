@@ -42,9 +42,11 @@ with the app. Apps that call the C API directly can embed the framework and
 include its `Headers/seekdb.h`.
 
 - iOS 18 or newer. Device and Simulator frameworks are separate slices.
-- One engine start per process. Opening the same directory again shares the
-  running engine; another directory is rejected. After the last close, reopening
-  requires a new process, and `seekdb_last_open_error` says so.
+- The first open starts the engine, which keeps running until the process exits;
+  close only releases the handle. Opening the same directory again reuses the
+  running engine, also after every handle has been closed. Another directory is
+  rejected, and so is any open after the engine failed to start;
+  `seekdb_last_open_error` says why.
 - A new database defaults to `memory_budget=1G`, `vector_memory_limit=128M`,
   `log_disk_size=2G` and `datafile_maxsize=20G`; parameters override them when the
   database is created. TCP is not available: a non-zero `port`, or a
@@ -54,28 +56,30 @@ include its `Headers/seekdb.h`.
   `unix_socket` (a short alias under the App's tmp directory, or under `/tmp` on
   the Simulator, when the real path is too long) and `user` `root`, with an empty
   password.
-- The engine changes the process working directory, so use absolute paths. Open
-  and close block; call them away from the UI thread. Close SQL clients before the
-  last close, which stops the engine and joins its thread without a timeout.
+- The engine sets the process working directory to its data directory and leaves
+  it there, so use absolute paths. The first open blocks until the engine accepts
+  connections; call it away from the UI thread.
 
 ## Tests
 
 `swift/Tests/SeekDBTests` runs on a Simulator through `TEST_SIMULATOR`. On iOS,
-`testInProcessEngineServesMySQLUntilItsOnlyClose` starts the engine, checks the
-connection options, reads the MySQL handshake from the socket, closes the engine
-and checks that a second start in the same process is refused with its
-diagnostic. The framework itself is also tested by the probe below.
+`testInProcessEngineKeepsServingAfterClose` starts the engine, checks the
+connection options, reads the MySQL handshake from the socket, closes the handle,
+opens the same directory again and reads the handshake once more, and checks that
+another directory is refused with its diagnostic. The framework itself is also tested by the probe below.
 
 Validated on 2026-10-14 with macOS 27.0, Xcode 27.0, Swift 6.4 and the iOS 27.0
-SDK, against Device and Simulator frameworks built from seekdb `e45afec49` (branch
-`feature/ios-swift`, 8 exports): `ios/build.sh` packaged both, and the 14 Swift tests
-passed on an iPhone 17 Simulator with iOS 27.0, the in-process engine test in 14.8
-seconds. On the same Simulator, a separate Swift package that depends on this one by
+SDK, against Device and Simulator frameworks built from seekdb `fde2cf4c1` (branch
+`feature/ios-swift`, 6 exports): `ios/build.sh` packaged both, and the 14 Swift tests
+passed on an iPhone 17 Simulator with iOS 27.0, the in-process engine test in 1.0
+second (about 14 seconds before, when close still stopped the engine). On the same Simulator, a separate Swift package that depends on this one by
 local path opened the engine through the `SeekDB` product, read its connection
 options and closed it. `ios/build.sh` rejected the framework header from before seekdb
 `e49e515fe`, whose `SeekdbConnectionOptions` had four fields. The probe below, at
-`378ea75`, passed two process runs against the Simulator framework (49/49 each,
-`previous_runs` 30 to 31), recorded in `framework_evidence/in-process-20261015/`. The Device framework was built and verified but not run on a device.
+`f26c85c`, passed two process runs against the Simulator framework (49/49 each,
+`previous_runs` 36 to 37), recorded in
+`framework_evidence/in-process-resident-20261015/`. Neither test process crashed when
+it exited with the engine still running. The Device framework was built and verified but not run on a device.
 
 ## SeekDB.framework probe
 
@@ -85,16 +89,15 @@ with `./build.sh release --ios [--simulator] --init --make` (before seekdb `9a35
 `2b17e74e7` that framework only runs the engine, and since seekdb `e49e515fe` its
 `seekdb.h` declares `seekdb_open`, `seekdb_last_open_error`, `seekdb_close` and
 `seekdb_connection_options` as `lib/include/seekdb/seekdb.h` does; since seekdb
-`e45afec49` it also exports four diagnostic functions of seekdb's in-process runtime,
-`seekdb_in_process_get_state`, `seekdb_in_process_get_cleanup_status`,
-`seekdb_in_process_get_cleanup_error` and `seekdb_in_process_get_build_id` (earlier
-builds exported more runtime functions, named `seekdb_ios_*` before seekdb
-`7242c9e6c`). Running SQL is the App's job, with
+`fde2cf4c1` it also exports two diagnostic functions of seekdb's in-process runtime,
+`seekdb_in_process_get_state` and `seekdb_in_process_get_build_id` (earlier builds
+exported more runtime functions, named `seekdb_ios_*` before seekdb `7242c9e6c`).
+Running SQL is the App's job, with
 a MySQL-protocol client of its choice. The probe App links UIKit and its own
-Connector/C, loads the three lifecycle functions and four runtime diagnostic functions
+Connector/C, loads the three lifecycle functions and two runtime diagnostic functions
 from the embedded framework with `dlopen`/`dlsym`, and runs SQL with Connector/C over the
 Unix socket that `seekdb_connection_options` returns. The framework ships no header for
-the runtime functions, so `framework_probe/app/seekdb_in_process.h` declares the four the
+the runtime functions, so `framework_probe/app/seekdb_in_process.h` declares the two the
 probe loads, matching `src/observer/in_process/seekdb_in_process.h` in seekdb. These
 tests moved here from seekdb's `unittest/ios_build` on 2026-10-10.
 
@@ -111,9 +114,10 @@ The framework directory must contain the `build-manifest.json` that seekdb's
 It can live anywhere, but the probe build directory and the
 stability output must be inside this repository. The probe records this repository's
 `HEAD` as `SeekDBProbeSourceRevision`, and its reports set `framework_api` to
-`in_process`. The validators also accept the earlier `lifecycle` reports, from before
-seekdb `e45afec49` removed the test-hook query, and the reports without that field,
-whose probe ran SQL through the framework's own C API.
+`in_process_resident`. The validators also accept the earlier `in_process` reports,
+from before seekdb `fde2cf4c1` kept the engine running after close, the `lifecycle`
+reports, from before seekdb `e45afec49` removed the test-hook query, and the reports
+without that field, whose probe ran SQL through the framework's own C API.
 
 ```sh
 python3 ios/framework_probe/build_framework_probe.py --simulator \
@@ -173,9 +177,10 @@ two process runs and a 600-second stability run each on an iPhone 17 Pro with
 iOS 27.0.1 and on an arm64 iOS 27.0 Simulator, for framework revision
 `6f902fdab24c`. Those runs predate the lifecycle-only framework; the probe then ran
 SQL through the framework's own C API. `framework_evidence/lifecycle-20261010/` holds
-the Simulator runs of the lifecycle-only framework, and
+the Simulator runs of the lifecycle-only framework,
 `framework_evidence/in-process-20261015/` the Simulator runs after seekdb removed the
-test-hook query.
+test-hook query, and `framework_evidence/in-process-resident-20261015/` the runs after
+seekdb kept the engine running after close.
 
 Checked on 2026-10-10 with macOS 27.0, Xcode 27.0 and the iOS 27.0 SDK after the
 move: the probe built here for the Simulator against a seekdb framework from
