@@ -20,26 +20,6 @@ seekdb=${SEEKDB_DIR:?Set SEEKDB_DIR to an oceanbase/seekdb checkout built with .
 out="$root/build/ios"
 output="$out/SeekDBEngine.xcframework"
 
-check_header() {
-  python3 - "$1" "$root/lib/include/seekdb/seekdb.h" <<'EOF'
-import re
-import sys
-
-
-def lifecycle_api(path):
-    text = re.sub(r"/\*.*?\*/", "", open(path).read(), flags=re.S)
-    parts = [re.search(r"typedef struct \{[^}]*\} SeekdbConnectionOptions;", text)]
-    for name in ("seekdb_open", "seekdb_last_open_error", "seekdb_close", "seekdb_connection_options"):
-        parts.append(re.search(r"^[^\n;]*\b%s\([^;]*\);" % name, text, re.M))
-    return [part and " ".join(part.group(0).split()) for part in parts]
-
-
-framework, bindings = sys.argv[1:]
-if lifecycle_api(framework) != lifecycle_api(bindings):
-    sys.exit("%s does not declare the lifecycle API of %s" % (framework, bindings))
-EOF
-}
-
 frameworks=()
 destinations=()
 for slice in "build_ios_release:IOS:iOS" "build_ios_simulator_release:IOSSIMULATOR:iOS Simulator"; do
@@ -54,7 +34,6 @@ for slice in "build_ios_release:IOS:iOS" "build_ios_simulator_release:IOSSIMULAT
     echo "$framework is built for $platform, expected $expected" >&2
     exit 1
   fi
-  check_header "$framework/Headers/seekdb.h"
   frameworks+=(-framework "$framework")
   destinations+=("generic/platform=$destination")
 done

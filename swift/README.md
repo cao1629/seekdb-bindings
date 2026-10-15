@@ -1,21 +1,27 @@
 # SeekDB Swift bindings
 
-`Sources/SeekDB` contains the platform-neutral API (`SeekDB`, `ConnectionOptions`,
-`SeekDBError`). `NativeAPI.swift` is the common bridge to the C API in
-`lib/include/seekdb/seekdb.h`, which `Package.swift` exposes to Swift as
-the `CSeekDB` module; it has no iOS-specific code. The API follows the Java
-bindings. It has no third-party Swift dependencies and does not include a SQL
-client, construct connection URLs, execute queries, or decode result sets.
+`Sources/SeekDB` contains the API (`SeekDB`, `ConnectionOptions`, `SeekDBError`).
+It runs seekdb in process: `NativeAPI.swift` calls the lifecycle functions of
+oceanbase/seekdb's `SeekDB.framework` through the `CSeekDB` module. The API follows
+the Java bindings. It has no third-party Swift dependencies and does not include a
+SQL client, construct connection URLs, execute queries, or decode result sets.
 Applications choose and configure their own MySQL-protocol client.
 
 ## Package layout
 
 This directory is a SwiftPM package: `Package.swift` exposes the `SeekDB` library
-from `Sources/SeekDB`, with tests in `Tests/SeekDBTests`. `CSeekDB` is a module map
-over the repository's `lib/include/seekdb/seekdb.h`. On macOS and Linux the
-`SeekDB` target links the existing `libseekdb` shared library; on iOS it links
-oceanbase/seekdb's `SeekDB.framework` through the repository's
-`build/ios/SeekDBEngine.xcframework`, which `ios/build.sh` creates.
+from `Sources/SeekDB`, with tests in `Tests/SeekDBTests`. The engine is seekdb's
+`SeekDB.framework`, which `ios/build.sh` packages as the repository's
+`build/ios/SeekDBEngine.xcframework`; when that exists, the package adds it as the
+binary target `SeekDBEngine`. It holds iOS slices only for now; packaging, runtime
+constraints and tests are in the [iOS instructions](../ios/README.md).
+
+`CSeekDB` is a module map whose `shim.h` includes the framework's own
+`<SeekDB/seekdb.h>`. That header comes from seekdb's
+`src/observer/in_process/seekdb.h` and declares `seekdb_open`,
+`seekdb_last_open_error`, `seekdb_close` and `seekdb_connection_options`. The
+repository's `lib/include/seekdb/seekdb.h` belongs to the out-of-process `libseekdb`
+and is not used here.
 
 `NativeAPI.swift` imports `CSeekDB` with `@_implementationOnly`. With a plain or
 `internal import`, every module that imports `SeekDB` must also find the `CSeekDB`
@@ -67,68 +73,20 @@ does not extend the native handle's lifetime. Do not open client connections fro
 saved options after the owning instance closes.
 
 `SeekDB.open(path, parameters: ["memory_budget", "2G", "log_disk_size", "4G"])`
-passes alternating key/value strings to the desktop native API. The wrapper
-rejects odd-length lists, empty names, and embedded NUL bytes. Other values are
-validated by the native implementation. Native open errors retain their return
-code and same-thread diagnostic in `SeekDBError`.
+passes alternating key/value strings to `seekdb_open`. The wrapper rejects
+odd-length lists, empty names, and embedded NUL bytes. Other values are validated
+by the native implementation. Native open errors retain their return code and
+same-thread diagnostic in `SeekDBError`.
 
 Options and close operations on a handle are serialized. A successful close is
 idempotent, and options requested afterward throw `SeekDBError.closed`. Failed
 close retains the handle. `deinit` attempts best-effort cleanup, but explicit close
-is required to observe failures and control which thread performs shutdown.
-
-## macOS and Linux
-
-The wrapper links the existing `libseekdb` shared library. The library manages a
-separate server process and discovers the `seekdb` executable beside itself.
-Closing the instance releases its handle; it does not promise immediate server
-termination. Existing native configuration and multi-client semantics apply.
-
-Build the native library first; building only the Swift wrapper does not require
-a running server. For example, on macOS with CMake and OpenSSL available:
-
-```sh
-git submodule update --init deps/mariadb-connector-c
-cmake -S . -B build/swift-native \
-  -DSEEKDB_BUILD_PYTHON=OFF -DBUILD_TESTING=OFF \
-  -DWITH_EXTERNAL_ZLIB=YES -DSEEKDB_BIN=/absolute/path/to/seekdb
-cmake --build build/swift-native --target seekdb --parallel 3
-SEEKDB_NATIVE_DIR="$PWD/build/swift-native" bash swift/build.sh build
-SEEKDB_NATIVE_DIR="$PWD/build/swift-native" bash swift/build.sh test
-```
-
-`SEEKDB_NATIVE_DIR` belongs to this build helper; it supplies linker search and
-runtime search paths. Other build systems must configure those paths themselves
-and deploy the matching native library and engine. To run wrapper unit tests
-without an engine binary, configure CMake with `-DSEEKDB_BIN=` instead. Linux uses
-the same native library interface but has not been runtime-validated in this work.
-
-With Swift 6.4 (Xcode 27), the default build system does not pass this helper's
-`-Xlinker` search and runtime paths to the test bundle, so the test link cannot
-find libseekdb. Append `--build-system native`, for example
-`SEEKDB_NATIVE_DIR="$PWD/build/swift-native" bash swift/build.sh test --build-system native`.
+is required to observe failures.
 
 ## Tests
 
 `Tests/SeekDBTests` covers public validation, native diagnostics, copied UTF-8
-values, closed-handle access, idempotence, failed-close ownership, deinitialization,
-and concurrent options/close. The desktop smoke test calls the real C API's
-parameter validation without starting an engine. On iOS one test starts the
-in-process engine; see the [iOS instructions](../ios/README.md).
-
-Validated on 2026-09-29 with Apple Silicon macOS 15.5, Xcode 16.4 and Swift 6.1.2:
-the fourteen Swift tests passed against a macOS `libseekdb.dylib` built from this
-repository with CMake, with Python and C++ test targets disabled, external zlib and
-no engine binary, including a real C error-path call with Unicode parameter values;
-no test server was required. Rechecked on 2026-10-08 with Xcode 27.0 and Swift 6.4:
-the same fourteen tests passed with `--build-system native` before and after the iOS
-files moved out of `swift/`. Rechecked on 2026-10-14 after `CSeekDB` became a module map
-over the public header: the fourteen tests passed again on macOS 27.0 with Xcode 27.0's
-Swift 6.4 and `--build-system native`. Rechecked on 2026-10-15 after `Package.swift`
-moved into `swift/`: the fourteen tests passed again the same way.
-
-## iOS
-
-On iOS the same API runs the engine inside the application instead of a separate
-process, through seekdb's `SeekDB.framework`. Its packaging, runtime constraints
-and tests are in `ios/`. See [iOS instructions](../ios/README.md).
+values, closed-handle access, idempotence, failed-close ownership, deinitialization
+and concurrent options/close, and one test starts the in-process engine. They run
+on an iOS Simulator through `TEST_SIMULATOR`; see the
+[iOS instructions](../ios/README.md).

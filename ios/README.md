@@ -1,14 +1,16 @@
 # iOS
 
 An iOS app cannot start the separate SeekDB process that libseekdb launches on
-desktop systems and Android. On iOS the Swift package links `SeekDB.framework`,
-the dynamic framework that oceanbase/seekdb builds with
-`./build.sh release --ios [--simulator] --init --make`. It runs the engine inside
-the application on a dedicated 8 MiB-stack thread and implements `seekdb_open`,
-`seekdb_last_open_error`, `seekdb_close` and `seekdb_connection_options` with the
-declarations in `lib/include/seekdb/seekdb.h`. The C query functions are not
-available on iOS. The Swift API is platform-neutral and lives in `swift/`; the iOS
-packaging, runtime constraints and tests are here.
+desktop systems and Android, and the Swift package always runs seekdb in process.
+It links `SeekDB.framework`, the dynamic framework that oceanbase/seekdb builds with
+`./build.sh release --ios [--simulator] --init --make`. The framework runs the
+engine inside the application on a dedicated 8 MiB-stack thread and implements
+`seekdb_open`, `seekdb_last_open_error`, `seekdb_close` and
+`seekdb_connection_options` as declared in its own `Headers/seekdb.h`, which comes
+from seekdb's `src/observer/in_process/seekdb.h`; the Swift package compiles against
+that header. The query functions in `lib/include/seekdb/seekdb.h` belong to the
+out-of-process libseekdb and are not available here. The Swift API lives in
+`swift/`; the iOS packaging, runtime constraints and tests are here.
 
 ## Build
 
@@ -25,14 +27,12 @@ SEEKDB_DIR=/path/to/seekdb bash ios/build.sh
 ```
 
 `ios/build.sh` puts each `SeekDB.framework` it finds in `SEEKDB_DIR` (device,
-Simulator or both) into `build/ios/SeekDBEngine.xcframework`. It first checks each
-framework's platform and that its `seekdb.h` declares the same
-`SeekdbConnectionOptions` and lifecycle functions as `lib/include/seekdb/seekdb.h`.
-When that XCFramework exists, `swift/Package.swift` adds it as the binary target
-`SeekDBEngine` and links it into the `SeekDB` product on iOS only; macOS and Linux
-keep linking libseekdb. `BUILD_SWIFT_PACKAGE=1` also builds the package with
-`xcodebuild` for each packaged platform, and `TEST_SIMULATOR=<simulator id>` runs
-the Swift tests on that Simulator.
+Simulator or both) into `build/ios/SeekDBEngine.xcframework`, after checking each
+framework's platform. When that XCFramework exists, `swift/Package.swift` adds it as
+the binary target `SeekDBEngine` of the `SeekDB` product, and the `CSeekDB` module
+reads the framework's `Headers/seekdb.h`. `BUILD_SWIFT_PACKAGE=1` also builds the
+package with `xcodebuild` for each packaged platform, and
+`TEST_SIMULATOR=<simulator id>` runs the Swift tests on that Simulator.
 
 ## Use
 
@@ -71,8 +71,9 @@ another directory is refused with its diagnostic. The example App below runs
 
 Validated on 2026-10-15 with macOS 27.0, Xcode 27.0, Swift 6.4 and the iOS 27.0
 SDK, against Device and Simulator frameworks built from seekdb `9786f15d9` (branch
-`feature/ios-swift`, 4 exports), with the package in `swift/`: `ios/build.sh`
-packaged both and built the package for each with `BUILD_SWIFT_PACKAGE=1`, and the
+`feature/ios-swift`, 4 exports), with the package in `swift/` reading the framework's
+own header: `ios/build.sh` packaged both and built the package for each with
+`BUILD_SWIFT_PACKAGE=1`, and the
 14 Swift tests passed on an iPhone 17 Simulator with iOS 27.0, the in-process
 engine test in 1.0 second (about 14 seconds before, when close still stopped the
 engine). On the same
@@ -80,9 +81,8 @@ Simulator, a separate Swift package that depends on this one by local path opene
 engine through the `SeekDB` product, read its connection options and closed it, and
 neither test process crashed when it exited with the engine still running. The
 example App below returned `{"select_1":1}` on a fresh database and again in a new
-process on the existing one. `ios/build.sh` rejected the framework header from before
-seekdb `e49e515fe`, whose `SeekdbConnectionOptions` had four fields. The Device
-framework was built and verified but not run on a device.
+process on the existing one. The Device framework was built and verified but not run
+on a device.
 
 ## Example App
 

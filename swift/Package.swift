@@ -22,7 +22,7 @@ let hasEngineFramework = FileManager.default.fileExists(atPath: Context.packageD
 var seekdbDependencies: [Target.Dependency] = ["CSeekDB"]
 var engineTargets: [Target] = []
 if hasEngineFramework {
-    seekdbDependencies.append(.target(name: "SeekDBEngine", condition: .when(platforms: [.iOS])))
+    seekdbDependencies.append("SeekDBEngine")
     engineTargets.append(.binaryTarget(name: "SeekDBEngine", path: engineFramework))
 }
 
@@ -35,10 +35,7 @@ let package = Package(
         .target(
             name: "SeekDB",
             dependencies: seekdbDependencies,
-            swiftSettings: [.enableExperimentalFeature("CheckImplementationOnly")],
-            linkerSettings: [
-                .linkedLibrary("seekdb", .when(platforms: [.macOS, .linux]))
-            ]
+            swiftSettings: [.enableExperimentalFeature("CheckImplementationOnly")]
         ),
         .testTarget(
             name: "SeekDBTests",

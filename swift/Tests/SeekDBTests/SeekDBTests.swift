@@ -52,27 +52,6 @@ final class SeekDBTests: XCTestCase {
                        value.utf8.map { CChar(bitPattern: $0) } + [0])
     }
 
-    #if os(macOS) || os(Linux)
-    func testRealNativeBridgeRejectsReservedParameterWithoutStartingServer() {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("seekdb-swift-数据库🦉-\(UUID().uuidString)").path
-        // Native validation scans the complete NUL-terminated pointer array
-        // before executable discovery or directory creation. Earlier Unicode
-        // values also remain alive for this actual C call.
-        XCTAssertThrowsError(try SeekDB.open(directory, parameters: [
-            "custom", "向量🦉", "memory_budget", "1G", "mysql_port", "2881"
-        ])) { error in
-            guard let nativeError = error as? SeekDBError,
-                  case .native(operation: .open, code: -2, message: let message) = nativeError else {
-                return XCTFail("Unexpected error from the real native bridge: \(error)")
-            }
-            XCTAssertTrue(message.contains("mysql_port is not supported"), message)
-        }
-        XCTAssertFalse(FileManager.default.fileExists(atPath: directory))
-    }
-    #endif
-
-    #if os(iOS)
     func testInProcessEngineKeepsServingAfterClose() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("seekdb-swift-\(UUID().uuidString)").path
@@ -97,7 +76,6 @@ final class SeekDBTests: XCTestCase {
             XCTAssertTrue(message.contains("another directory"), message)
         }
     }
-    #endif
 
     func testOpenFailurePreservesNativeCodeAndMessage() {
         let native = MockNativeAPI(openCode: -17)
@@ -349,7 +327,6 @@ private final class MockNativeAPI: NativeAPI, @unchecked Sendable {
     }
 }
 
-#if os(iOS)
 private func mysqlProtocolVersion(at path: String) throws -> UInt8 {
     let client = socket(AF_UNIX, SOCK_STREAM, 0)
     guard client >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
@@ -376,4 +353,3 @@ private func mysqlProtocolVersion(at path: String) throws -> UInt8 {
     }
     return header[4]
 }
-#endif
