@@ -66,141 +66,51 @@ include its `Headers/seekdb.h`.
 `testInProcessEngineKeepsServingAfterClose` starts the engine, checks the
 connection options, reads the MySQL handshake from the socket, closes the handle,
 opens the same directory again and reads the handshake once more, and checks that
-another directory is refused with its diagnostic. The framework itself is also tested by the probe below.
+another directory is refused with its diagnostic. The example App below runs
+`SELECT 1` through the package in a real App.
 
-Validated on 2026-10-14 with macOS 27.0, Xcode 27.0, Swift 6.4 and the iOS 27.0
+Validated on 2026-10-15 with macOS 27.0, Xcode 27.0, Swift 6.4 and the iOS 27.0
 SDK, against Device and Simulator frameworks built from seekdb `fde2cf4c1` (branch
 `feature/ios-swift`, 6 exports): `ios/build.sh` packaged both, and the 14 Swift tests
 passed on an iPhone 17 Simulator with iOS 27.0, the in-process engine test in 1.0
-second (about 14 seconds before, when close still stopped the engine). On the same Simulator, a separate Swift package that depends on this one by
-local path opened the engine through the `SeekDB` product, read its connection
-options and closed it. `ios/build.sh` rejected the framework header from before seekdb
-`e49e515fe`, whose `SeekdbConnectionOptions` had four fields. The probe below, at
-`f26c85c`, passed two process runs against the Simulator framework (49/49 each,
-`previous_runs` 36 to 37), recorded in
-`framework_evidence/in-process-resident-20261015/`. Neither test process crashed when
-it exited with the engine still running. The Device framework was built and verified but not run on a device.
+second (about 14 seconds before, when close still stopped the engine). On the same
+Simulator, a separate Swift package that depends on this one by local path opened the
+engine through the `SeekDB` product, read its connection options and closed it, and
+neither test process crashed when it exited with the engine still running. The
+example App below returned `{"select_1":1}` on a fresh database and again in a new
+process on the existing one. `ios/build.sh` rejected the framework header from before
+seekdb `e49e515fe`, whose `SeekdbConnectionOptions` had four fields. The Device
+framework was built and verified but not run on a device.
 
-## SeekDB.framework probe
+## Example App
 
-`framework_probe/` tests the dynamic `SeekDB.framework` that oceanbase/seekdb builds
-with `./build.sh release --ios [--simulator] --init --make` (before seekdb `9a35937b0`,
-`build.iphone.sh release [--simulator] --target seekdb_ios_framework`). Since seekdb
-`2b17e74e7` that framework only runs the engine, and since seekdb `e49e515fe` its
-`seekdb.h` declares `seekdb_open`, `seekdb_last_open_error`, `seekdb_close` and
-`seekdb_connection_options` as `lib/include/seekdb/seekdb.h` does; since seekdb
-`fde2cf4c1` it also exports two diagnostic functions of seekdb's in-process runtime,
-`seekdb_in_process_get_state` and `seekdb_in_process_get_build_id` (earlier builds
-exported more runtime functions, named `seekdb_ios_*` before seekdb `7242c9e6c`).
-Running SQL is the App's job, with
-a MySQL-protocol client of its choice. The probe App links UIKit and its own
-Connector/C, loads the three lifecycle functions and two runtime diagnostic functions
-from the embedded framework with `dlopen`/`dlsym`, and runs SQL with Connector/C over the
-Unix socket that `seekdb_connection_options` returns. The framework ships no header for
-the runtime functions, so `framework_probe/app/seekdb_in_process.h` declares the two the
-probe loads, matching `src/observer/in_process/seekdb_in_process.h` in seekdb. These
-tests moved here from seekdb's `unittest/ios_build` on 2026-10-10.
+`example/` is a SwiftUI App that uses this package the way an application would. On
+launch it opens a database in its `Documents/seekdb` directory with `SeekDB.open`,
+connects to the Unix socket from `connectionOptions()` with
+[MySQLNIO](https://github.com/vapor/mysql-nio), a pure-Swift MySQL client, runs
+`SELECT 1`, closes the handle and writes `{"select_1":1}` to `Documents/select1.json`,
+or `{"error": ...}` when a step fails. MySQLNIO always assumes the
+`CLIENT_DEPRECATE_EOF` capability, which seekdb does not announce, so its own
+`simpleQuery` returns no rows from seekdb; `example/Sources/TextQuery.swift` is a
+`MySQLCommand` that reads a text result set either way.
 
-`framework_probe/mariadb-connector-c/` is MariaDB Connector/C 3.4.8 (upstream revision
-`46880b003653a000e9588bd73c8b1dd65088c686`), unmodified and licensed under
-LGPL-2.1-or-later (`COPYING.LIB`). It moved here from seekdb's `deps/ios-driver` when the
-framework stopped running SQL. `build_framework_probe.py` builds it as a static library
-for the selected SDK with OpenSSL and zlib from `--deps-prefix`, the
-`deps/ios/<sdk>/devel` directory that seekdb's iOS dependency build produces, and links
-the probe against it.
-
-The framework directory must contain the `build-manifest.json` that seekdb's
-`verify_framework.py` writes during the framework build, with the matching platform.
-It can live anywhere, but the probe build directory and the
-stability output must be inside this repository. The probe records this repository's
-`HEAD` as `SeekDBProbeSourceRevision`, and its reports set `framework_api` to
-`in_process_resident`. The validators also accept the earlier `in_process` reports,
-from before seekdb `fde2cf4c1` kept the engine running after close, the `lifecycle`
-reports, from before seekdb `e45afec49` removed the test-hook query, and the reports
-without that field, whose probe ran SQL through the framework's own C API.
+The Xcode project is generated from `example/project.yml` with
+[XcodeGen](https://github.com/yonaskolb/XcodeGen). It depends on this repository by
+local path and on MySQLNIO and SwiftNIO from GitHub, and it signs ad hoc for the
+Simulator; to run on a device, open the generated `example/SeekDBExample.xcodeproj`
+in Xcode and choose a team. `example/run.sh` generates the project, builds the App for
+a Simulator into `build/ios/example`, installs and launches it, and waits up to 300
+seconds for `select1.json`; it fails unless the result is 1. Package the framework
+with `ios/build.sh` first.
 
 ```sh
-python3 ios/framework_probe/build_framework_probe.py --simulator \
-  --framework /path/to/seekdb/build_ios_simulator_release/framework/SeekDB.framework \
-  --deps-prefix /path/to/seekdb/deps/ios/iphonesimulator/devel \
-  --build build/ios/framework-probe
-python3 ios/framework_probe/build_framework_probe.py \
-  --framework /path/to/seekdb/build_ios_release/framework/SeekDB.framework \
-  --deps-prefix /path/to/seekdb/deps/ios/iphoneos/devel \
-  --build build/ios/framework-probe-device \
-  --profile /path/to/existing.mobileprovision --identity "SIGNING IDENTITY"
+brew install xcodegen
+bash ios/example/run.sh SIMULATOR_UDID
 ```
 
-Simulator builds are signed ad hoc. Device builds sign offline with an existing
-explicit App profile and its identity; the script does not use an Xcode account.
-Install and launch the App and keep it in the foreground. It writes
-`Documents/framework-probe.json`; a passing report has `complete`, `passed` and
-`worker_exit` true and `build_id` equal to the first 12
-characters of the framework's source revision. Delete the report, launch the probe
-again in a new process, and check that `previous_runs` grew by one. Then validate
-the two reports:
-
-```sh
-export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-xcrun simctl install SIMULATOR_UDID \
-  build/ios/framework-probe/Release-iphonesimulator/SeekDBFrameworkProbe.app
-xcrun simctl launch --terminate-running-process SIMULATOR_UDID org.seekdb.frameworkprobe
-python3 ios/framework_probe/validate_framework_probe.py \
-  --revision FULL_FRAMEWORK_REVISION run-1.json run-2.json
-```
-
-On a device, use `xcrun devicectl device install app` and
-`xcrun devicectl device process launch` instead, and copy the report out of the
-App data container.
-
-`run_framework_stability.py` runs one foreground soak followed by fresh process
-launches that check the committed counter survived. It needs a framework built from
-a clean seekdb tree (`source_dirty` false). It fails on a sampling gap longer than
-30 seconds or on more than 256 MiB of footprint growth after the warmup. On a device,
-pass `--device UDID` with the device framework and App, and keep the phone unlocked.
-
-```sh
-python3 ios/framework_probe/run_framework_stability.py --simulator SIMULATOR_UDID \
-  --app build/ios/framework-probe/Release-iphonesimulator/SeekDBFrameworkProbe.app \
-  --framework /path/to/seekdb/build_ios_simulator_release/framework/SeekDB.framework \
-  --output build/ios/stability/UNIQUE_RUN --duration 600 --runs 5
-```
-
-The validators have host tests that run against the recorded evidence:
-
-```sh
-python3 -B -m unittest discover -s ios/framework_probe
-```
-
-`framework_probe/framework_evidence` holds the 2026-10-07 runs recorded in seekdb:
-two process runs and a 600-second stability run each on an iPhone 17 Pro with
-iOS 27.0.1 and on an arm64 iOS 27.0 Simulator, for framework revision
-`6f902fdab24c`. Those runs predate the lifecycle-only framework; the probe then ran
-SQL through the framework's own C API. `framework_evidence/lifecycle-20261010/` holds
-the Simulator runs of the lifecycle-only framework,
-`framework_evidence/in-process-20261015/` the Simulator runs after seekdb removed the
-test-hook query, and `framework_evidence/in-process-resident-20261015/` the runs after
-seekdb kept the engine running after close.
-
-Checked on 2026-10-10 with macOS 27.0, Xcode 27.0 and the iOS 27.0 SDK after the
-move: the probe built here for the Simulator against a seekdb framework from
-revision `72338ea757ca` (built with an uncommitted change, so its manifest records
-`source_dirty` true), ran twice on an iPhone 17 Simulator with iOS 27.0, passed
-77/77 assertions with `worker_exit` in both runs, advanced `previous_runs` from 3
-to 4, and `validate_framework_probe.py` accepted the pair. The 14 host tests passed.
-The stability runner and a device build were not run in that check.
-
-Checked again the same day for the lifecycle-only framework, with the same tools and
-Simulator: seekdb `2b17e74e7` built from a clean tree, and the probe from this
-repository's `26fc9cc`. Two process runs passed 51/51 assertions with `worker_exit`,
-`previous_runs` went from 9 to 10, and `validate_framework_probe.py` accepted the pair.
-`run_framework_stability.py --duration 600 --runs 5` passed: 2927 transaction
-iterations and 5781 concurrent reads over 181 connections in 600 seconds, no footprint
-growth after the 60-second warmup, and the committed counter 1464 survived four more
-launches. The warmup footprint, 241.6 MiB, is about 79 MiB higher than in the
-2026-10-07 Simulator run; the cause was not investigated. The 19 host tests passed. No
-device build or device run was done. Details are in
-`framework_probe/framework_evidence/lifecycle-20261010/README.md`.
+The example replaces `framework_probe/`, an Objective-C++ App that loaded the
+framework's C functions with `dlopen` and ran SQL through MariaDB Connector/C, with
+its validators, stability runner and recorded runs; git history keeps it.
 
 ## Parked device test suite
 

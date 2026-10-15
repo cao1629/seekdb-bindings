@@ -46,5 +46,5 @@ together, or check out seekdb revision `14a930a80`. The last complete device run
 recorded in seekdb's `docs/developer-guide/zh/ios-build.md`: revision `6deac1205`,
 2026-10-04, iPhone 17 Pro, all 8 stages and 24/24 checks passed.
 
-The public-API framework probe in `../framework_probe` is separate and does run from this
-repository.
+The Swift example App in `../example`, which runs `SELECT 1` through the Swift package, is
+separate and does run from this repository.
