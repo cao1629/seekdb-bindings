@@ -70,8 +70,7 @@ SEEKDB_DIR=/path/to/seekdb bash swift/build.sh
 or both) into `build/SeekDBEngine.xcframework` in this directory, after checking each
 framework's platform. `BUILD_SWIFT_PACKAGE=1` also builds this package with
 `xcodebuild` for each packaged platform, and `TEST_SIMULATOR=<simulator id>` runs the
-tests on that Simulator; their intermediate files go to the repository's
-`build/ios/xcode`.
+tests on that Simulator; their intermediate files go to `.build/xcode` here.
 
 ## API
 

@@ -15,11 +15,10 @@
 
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-root=$(cd "$here/.." && pwd)
 export DEVELOPER_DIR=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}
 seekdb=${SEEKDB_DIR:?Set SEEKDB_DIR to an oceanbase/seekdb checkout built with ./build.sh release --ios [--simulator] --make}
 output="$here/build/SeekDBEngine.xcframework"
-derived="$root/build/ios/xcode"
+derived="$here/.build/xcode"
 
 frameworks=()
 destinations=()

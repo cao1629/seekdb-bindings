@@ -19,7 +19,7 @@ root=$(cd "$here/../.." && pwd)
 export DEVELOPER_DIR=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}
 simulator=${1:?Usage: ios/example/run.sh SIMULATOR_UDID}
 bundle=org.seekdb.example
-derived="$root/build/ios/example"
+derived="$here/build"
 
 if [[ ! -d "$root/swift/build/SeekDBEngine.xcframework" ]]; then
   echo "Run SEEKDB_DIR=<seekdb checkout> bash swift/build.sh first" >&2

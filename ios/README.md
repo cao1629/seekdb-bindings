@@ -20,7 +20,7 @@ The Xcode project is generated from `example/project.yml` with
 `swift/` by local path and on MySQLNIO and SwiftNIO from GitHub, and it signs ad hoc
 for the Simulator; to run on a device, open the generated `example/SeekDBExample.xcodeproj`
 in Xcode and choose a team. `example/run.sh` generates the project, builds the App for
-a Simulator into `build/ios/example`, installs and launches it, and waits up to 300
+a Simulator into `example/build`, installs and launches it, and waits up to 300
 seconds for `select1.json`; it fails unless the result is 1. Package the framework
 with `swift/build.sh` first.
 
