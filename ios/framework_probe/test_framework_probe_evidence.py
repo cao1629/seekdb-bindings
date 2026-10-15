@@ -9,6 +9,7 @@ from validate_framework_probe import validate_reports
 EVIDENCE = Path(__file__).parent / "framework_evidence"
 REVISION = "6f902fdab24ccefdde97c991b50faf551928b604"
 LIFECYCLE_REVISION = "2b17e74e74f6513caa26c535e436d98964836ca5"
+IN_PROCESS_REVISION = "e45afec4924e7279e28ad0bb18afc4fdf336d4e0"
 LIFECYCLE_ENTRY_POINTS = {
     "seekdb_open", "seekdb_close", "seekdb_connection_options", "seekdb_ios_get_state",
     "seekdb_ios_get_cleanup_status", "seekdb_ios_get_cleanup_error", "seekdb_ios_get_build_id",
@@ -86,6 +87,20 @@ class FrameworkEvidenceTests(unittest.TestCase):
         reports = [json.loads((EVIDENCE / f"lifecycle-20261010/simulator-run-{number}.json").read_text())
                    for number in (1, 2)]
         validate_reports(reports, LIFECYCLE_REVISION)
+
+    def in_process_reports(self):
+        return [json.loads((EVIDENCE / f"in-process-20261015/simulator-run-{number}.json").read_text())
+                for number in (1, 2)]
+
+    def test_recorded_in_process_runs_pass(self):
+        validate_reports(self.in_process_reports(), IN_PROCESS_REVISION)
+
+    def test_in_process_runs_with_hook_entry_point_fail(self):
+        reports = self.in_process_reports()
+        for report in reports:
+            report["steps"].append({"name": "dlsym seekdb_in_process_get_hook_mode", "passed": True})
+        with self.assertRaisesRegex(ValueError, "7 dynamically loaded"):
+            validate_reports(reports, IN_PROCESS_REVISION)
 
 
 if __name__ == "__main__":
