@@ -70,8 +70,8 @@ another directory is refused with its diagnostic. The example App below runs
 `SELECT 1` through the package in a real App.
 
 Validated on 2026-10-15 with macOS 27.0, Xcode 27.0, Swift 6.4 and the iOS 27.0
-SDK, against Device and Simulator frameworks built from seekdb `fde2cf4c1` (branch
-`feature/ios-swift`, 6 exports): `ios/build.sh` packaged both, and the 14 Swift tests
+SDK, against Device and Simulator frameworks built from seekdb `9786f15d9` (branch
+`feature/ios-swift`, 4 exports): `ios/build.sh` packaged both, and the 14 Swift tests
 passed on an iPhone 17 Simulator with iOS 27.0, the in-process engine test in 1.0
 second (about 14 seconds before, when close still stopped the engine). On the same
 Simulator, a separate Swift package that depends on this one by local path opened the
