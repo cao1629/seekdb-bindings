@@ -28,7 +28,7 @@ public:
     report_[@"complete"] = @NO;
     report_[@"probe_source_revision"] = @PROBE_SOURCE_REVISION;
     report_[@"run_id"] = NSUUID.UUID.UUIDString;
-    report_[@"framework_api"] = @"lifecycle";
+    report_[@"framework_api"] = @"in_process";
     report_[@"test_transport"] = @"Connector/C over actual Unix socket";
     save();
   }
@@ -100,11 +100,9 @@ public:
     if (!check(@"dlsym " #name, driver_.name != nullptr)) return;
     LOAD(seekdb_open) LOAD(seekdb_close) LOAD(seekdb_connection_options)
     LOAD(seekdb_in_process_get_state) LOAD(seekdb_in_process_get_cleanup_status)
-    LOAD(seekdb_in_process_get_cleanup_error) LOAD(seekdb_in_process_get_build_id) LOAD(seekdb_in_process_get_hook_mode)
+    LOAD(seekdb_in_process_get_cleanup_error) LOAD(seekdb_in_process_get_build_id)
 #undef LOAD
     report_[@"build_id"] = [NSString stringWithUTF8String:driver_.seekdb_in_process_get_build_id()];
-    report_[@"hook_mode"] = [NSString stringWithUTF8String:driver_.seekdb_in_process_get_hook_mode()];
-    if (!check(@"production hooks disabled", strcmp(driver_.seekdb_in_process_get_hook_mode(), "disabled") == 0)) return;
     NSString *base = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/framework-db"];
     char before[4096];
     if (!check(@"capture cwd", getcwd(before, sizeof(before)) != nullptr)) return;

@@ -112,8 +112,8 @@ def main():
     manifest = json.loads((framework / "build-manifest.json").read_text())
     simulator = args.simulator is not None
     expected_platform = "IOSSIMULATOR" if simulator else "IOS"
-    if manifest["platform"] != expected_platform or manifest["source_dirty"] or manifest["test_hooks"] != "disabled":
-        parser.error("Require a clean, hooks-disabled matching framework")
+    if manifest["platform"] != expected_platform or manifest["source_dirty"]:
+        parser.error("Require a clean matching framework")
     identifier = args.simulator or args.device
     environment = dict(os.environ)
     environment.setdefault("DEVELOPER_DIR", "/Applications/Xcode.app/Contents/Developer")

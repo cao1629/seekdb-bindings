@@ -21,7 +21,7 @@ struct Driver {
 #define ENTRY(name) decltype(&name) name = nullptr;
   ENTRY(seekdb_open) ENTRY(seekdb_close) ENTRY(seekdb_connection_options)
   ENTRY(seekdb_in_process_get_state) ENTRY(seekdb_in_process_get_cleanup_status)
-  ENTRY(seekdb_in_process_get_cleanup_error) ENTRY(seekdb_in_process_get_build_id) ENTRY(seekdb_in_process_get_hook_mode)
+  ENTRY(seekdb_in_process_get_cleanup_error) ENTRY(seekdb_in_process_get_build_id)
 #undef ENTRY
 };
 

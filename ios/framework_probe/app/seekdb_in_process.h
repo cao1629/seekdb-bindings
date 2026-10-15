@@ -32,7 +32,6 @@ enum seekdb_in_process_state seekdb_in_process_get_state(void);
 unsigned int seekdb_in_process_get_cleanup_status(void);
 int seekdb_in_process_get_cleanup_error(void);
 const char *seekdb_in_process_get_build_id(void);
-const char *seekdb_in_process_get_hook_mode(void);
 
 #ifdef __cplusplus
 }

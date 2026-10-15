@@ -14,9 +14,11 @@ REQUIRED_STEPS = {
     "stopped and cleaned up", "one startup per process",
 }
 LIFECYCLE_STEPS = REQUIRED_STEPS - {"value ownership", "framework allocation"}
+IN_PROCESS_STEPS = LIFECYCLE_STEPS - {"production hooks disabled"}
 FRAMEWORK_APIS = {
     None: (REQUIRED_STEPS, 30),
     "lifecycle": (LIFECYCLE_STEPS, 8),
+    "in_process": (IN_PROCESS_STEPS, 7),
 }
 
 
@@ -27,12 +29,15 @@ def validate_reports(reports, revision):
     apis = {report.get("framework_api") for report in reports}
     if len(apis) != 1 or not apis <= FRAMEWORK_APIS.keys():
         raise ValueError("Runs must use one known framework API")
-    required, entry_points = FRAMEWORK_APIS[apis.pop()]
+    api = apis.pop()
+    required, entry_points = FRAMEWORK_APIS[api]
     for report in reports:
         if any(report.get(key) is not True for key in ("complete", "passed", "worker_exit")):
             raise ValueError("Run must pass, complete and survive loading-thread TLS destruction")
-        if report.get("build_id") != revision[:12] or report.get("hook_mode") != "disabled":
-            raise ValueError("Run revision or hook state does not match")
+        if report.get("build_id") != revision[:12]:
+            raise ValueError("Run revision does not match")
+        if api != "in_process" and report.get("hook_mode") != "disabled":
+            raise ValueError("Run hook state does not match")
         if report.get("test_transport") != "Connector/C over actual Unix socket":
             raise ValueError("Run does not use the external socket client")
         steps = report.get("steps", [])

@@ -89,7 +89,7 @@ final class SeekDBTests: XCTestCase {
             guard case SeekDBError.native(operation: .open, code: -1, message: let message) = error else {
                 return XCTFail("Unexpected error: \(error)")
             }
-            XCTAssertTrue(message.contains("restart the App"), message)
+            XCTAssertTrue(message.contains("start a new process"), message)
         }
     }
     #endif

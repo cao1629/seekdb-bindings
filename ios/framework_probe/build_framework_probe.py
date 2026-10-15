@@ -63,8 +63,8 @@ def main():
     environment.setdefault("DEVELOPER_DIR", "/Applications/Xcode.app/Contents/Developer")
     manifest = json.loads((framework / "build-manifest.json").read_text())
     expected = "IOSSIMULATOR" if args.simulator else "IOS"
-    if manifest["platform"] != expected or manifest["test_hooks"] != "disabled":
-        parser.error("Framework platform or production hook state does not match")
+    if manifest["platform"] != expected:
+        parser.error("Framework platform does not match")
     profile = None
     team = ""
     if not args.simulator:
