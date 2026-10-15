@@ -14,9 +14,9 @@ MySQL-protocol client; the [iOS example App](../ios/README.md) uses MySQLNIO.
 
 This directory is a SwiftPM package: `Package.swift` exposes the `SeekDB` library
 from `Sources/SeekDB`, with tests in `Tests/SeekDBTests`. The engine is seekdb's
-`SeekDB.framework`, which `build.sh` in this directory packages as the repository's
-`build/ios/SeekDBEngine.xcframework` (see [Build](#build)); when that exists, the
-package adds it as the binary target `SeekDBEngine`. It holds iOS slices only for now.
+`SeekDB.framework`, which `build.sh` in this directory packages as
+`build/SeekDBEngine.xcframework` next to it (see [Build](#build)); when that exists,
+the package adds it as the binary target `SeekDBEngine`. It holds iOS slices only for now.
 
 `CSeekDB` is a module map whose `shim.h` includes the framework's own
 `<SeekDB/seekdb.h>`. That header comes from seekdb's
@@ -67,10 +67,11 @@ SEEKDB_DIR=/path/to/seekdb bash swift/build.sh
 ```
 
 `build.sh` puts each `SeekDB.framework` it finds in `SEEKDB_DIR` (device, Simulator
-or both) into `build/ios/SeekDBEngine.xcframework`, after checking each framework's
-platform. `BUILD_SWIFT_PACKAGE=1` also builds this package with `xcodebuild` for each
-packaged platform, and `TEST_SIMULATOR=<simulator id>` runs the tests on that
-Simulator.
+or both) into `build/SeekDBEngine.xcframework` in this directory, after checking each
+framework's platform. `BUILD_SWIFT_PACKAGE=1` also builds this package with
+`xcodebuild` for each packaged platform, and `TEST_SIMULATOR=<simulator id>` runs the
+tests on that Simulator; their intermediate files go to the repository's
+`build/ios/xcode`.
 
 ## API
 

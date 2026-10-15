@@ -2,7 +2,7 @@
 
 `example/` is a SwiftUI App that uses the Swift package in `swift/` the way an
 application would. It depends on that package and on the
-`build/ios/SeekDBEngine.xcframework` that `swift/build.sh` packages from seekdb's
+`swift/build/SeekDBEngine.xcframework` that `swift/build.sh` packages from seekdb's
 `SeekDB.framework`; the [Swift bindings](../swift/README.md#build) describe how to
 build both, and the runtime constraints apps have to follow.
 

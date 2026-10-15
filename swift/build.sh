@@ -14,11 +14,12 @@
 # limitations under the License.
 
 set -euo pipefail
-root=$(cd "$(dirname "$0")/.." && pwd)
+here=$(cd "$(dirname "$0")" && pwd)
+root=$(cd "$here/.." && pwd)
 export DEVELOPER_DIR=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}
 seekdb=${SEEKDB_DIR:?Set SEEKDB_DIR to an oceanbase/seekdb checkout built with ./build.sh release --ios [--simulator] --make}
-out="$root/build/ios"
-output="$out/SeekDBEngine.xcframework"
+output="$here/build/SeekDBEngine.xcframework"
+derived="$root/build/ios/xcode"
 
 frameworks=()
 destinations=()
@@ -41,18 +42,18 @@ if [[ ${#frameworks[@]} -eq 0 ]]; then
   echo "No SeekDB.framework in $seekdb; run ./build.sh release --ios [--simulator] --make there first" >&2
   exit 1
 fi
-mkdir -p "$out"
+mkdir -p "$here/build"
 rm -rf "$output"
 xcodebuild -create-xcframework "${frameworks[@]}" -output "$output"
 
 if [[ ${BUILD_SWIFT_PACKAGE:-0} == 1 ]]; then
   for destination in "${destinations[@]}"; do
-    (cd "$root/swift" && xcodebuild -scheme seekdb-bindings -destination "$destination" \
-      -derivedDataPath "$out/xcode" CODE_SIGNING_ALLOWED=NO build)
+    (cd "$here" && xcodebuild -scheme seekdb-bindings -destination "$destination" \
+      -derivedDataPath "$derived" CODE_SIGNING_ALLOWED=NO build)
   done
 fi
 
 if [[ -n ${TEST_SIMULATOR:-} ]]; then
-  (cd "$root/swift" && xcodebuild -scheme seekdb-bindings -destination "platform=iOS Simulator,id=$TEST_SIMULATOR" \
-    -derivedDataPath "$out/xcode" test)
+  (cd "$here" && xcodebuild -scheme seekdb-bindings -destination "platform=iOS Simulator,id=$TEST_SIMULATOR" \
+    -derivedDataPath "$derived" test)
 fi

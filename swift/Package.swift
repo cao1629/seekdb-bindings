@@ -16,7 +16,7 @@
 import Foundation
 import PackageDescription
 
-let engineFramework = "../build/ios/SeekDBEngine.xcframework"
+let engineFramework = "build/SeekDBEngine.xcframework"
 let hasEngineFramework = FileManager.default.fileExists(atPath: Context.packageDirectory + "/" + engineFramework)
 
 var seekdbDependencies: [Target.Dependency] = ["CSeekDB"]

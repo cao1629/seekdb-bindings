@@ -21,7 +21,7 @@ simulator=${1:?Usage: ios/example/run.sh SIMULATOR_UDID}
 bundle=org.seekdb.example
 derived="$root/build/ios/example"
 
-if [[ ! -d "$root/build/ios/SeekDBEngine.xcframework" ]]; then
+if [[ ! -d "$root/swift/build/SeekDBEngine.xcframework" ]]; then
   echo "Run SEEKDB_DIR=<seekdb checkout> bash swift/build.sh first" >&2
   exit 1
 fi
