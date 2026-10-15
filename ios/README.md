@@ -111,10 +111,3 @@ bash ios/example/run.sh SIMULATOR_UDID
 The example replaces `framework_probe/`, an Objective-C++ App that loaded the
 framework's C functions with `dlopen` and ran SQL through MariaDB Connector/C, with
 its validators, stability runner and recorded runs; git history keeps it.
-
-## Parked device test suite
-
-`device_tests/` stores the engine-internal iOS device test suite that seekdb removed on
-2026-10-10. It is a copy laid out like the seekdb repository and does not run from
-here; [device_tests/README.md](device_tests/README.md) explains what it contains and how
-to restore it in seekdb.

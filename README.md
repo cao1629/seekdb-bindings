@@ -25,7 +25,7 @@ seekdb-bindings/
 ├── java/                       Java lifecycle binding
 ├── android/                    Android build, AAR packaging, device tests
 ├── swift/                      Swift lifecycle binding
-├── ios/                        iOS XCFramework packaging, framework probe
+├── ios/                        iOS XCFramework packaging, example App
 ├── scripts/                    wheel build, seekdb manylinux build, verify-wheel, etc.
 └── deps/                       vendored mariadb-connector-c, googletest
 ```
