@@ -2,19 +2,21 @@
 
 `Sources/SeekDB` contains the API (`SeekDB`, `ConnectionOptions`, `SeekDBError`).
 It runs seekdb in process: `NativeAPI.swift` calls the lifecycle functions of
-oceanbase/seekdb's `SeekDB.framework` through the `CSeekDB` module. The API follows
-the Java bindings. It has no third-party Swift dependencies and does not include a
-SQL client, construct connection URLs, execute queries, or decode result sets.
-Applications choose and configure their own MySQL-protocol client.
+oceanbase/seekdb's `SeekDB.framework` through the `CSeekDB` module, and the framework
+runs the engine inside the application on a dedicated 8 MiB-stack thread. An iOS app
+cannot start the separate SeekDB process that libseekdb launches on desktop systems
+and Android. The API follows the Java bindings. It has no third-party Swift
+dependencies and does not include a SQL client, construct connection URLs, execute
+queries, or decode result sets. Applications choose and configure their own
+MySQL-protocol client; the [iOS example App](../ios/README.md) uses MySQLNIO.
 
 ## Package layout
 
 This directory is a SwiftPM package: `Package.swift` exposes the `SeekDB` library
 from `Sources/SeekDB`, with tests in `Tests/SeekDBTests`. The engine is seekdb's
 `SeekDB.framework`, which `build.sh` in this directory packages as the repository's
-`build/ios/SeekDBEngine.xcframework`; when that exists, the package adds it as the
-binary target `SeekDBEngine`. It holds iOS slices only for now; packaging, runtime
-constraints and tests are in the [iOS instructions](../ios/README.md).
+`build/ios/SeekDBEngine.xcframework` (see [Build](#build)); when that exists, the
+package adds it as the binary target `SeekDBEngine`. It holds iOS slices only for now.
 
 `CSeekDB` is a module map whose `shim.h` includes the framework's own
 `<SeekDB/seekdb.h>`. That header comes from seekdb's
@@ -50,6 +52,26 @@ with its own root manifest. A native engine is still required, just as the Java
 JAR requires its matching native components. The package does not download
 engines or change process search paths.
 
+## Build
+
+Requires macOS with full Xcode and the iOS SDKs. `build.sh` uses
+`/Applications/Xcode.app/Contents/Developer` unless `DEVELOPER_DIR` is set. Build
+the framework in a seekdb checkout, then package it:
+
+```sh
+cd /path/to/seekdb
+./build.sh release --ios --init --make -j8               # device
+./build.sh release --ios --simulator --init --make -j8   # Simulator
+cd /path/to/seekdb-bindings
+SEEKDB_DIR=/path/to/seekdb bash swift/build.sh
+```
+
+`build.sh` puts each `SeekDB.framework` it finds in `SEEKDB_DIR` (device, Simulator
+or both) into `build/ios/SeekDBEngine.xcframework`, after checking each framework's
+platform. `BUILD_SWIFT_PACKAGE=1` also builds this package with `xcodebuild` for each
+packaged platform, and `TEST_SIMULATOR=<simulator id>` runs the tests on that
+Simulator.
+
 ## API
 
 ```swift
@@ -83,10 +105,49 @@ idempotent, and options requested afterward throw `SeekDBError.closed`. Failed
 close retains the handle. `deinit` attempts best-effort cleanup, but explicit close
 is required to observe failures.
 
+## Runtime constraints
+
+Xcode embeds and signs `SeekDB.framework` with an app that depends on `SeekDB`. Apps
+that call the C API directly can embed the framework and include its
+`Headers/seekdb.h`.
+
+- iOS 18 or newer. Device and Simulator frameworks are separate slices.
+- The first open starts the engine, which keeps running until the process exits;
+  close only releases the handle. Opening the same directory again reuses the
+  running engine, also after every handle has been closed. Another directory is
+  rejected, and so is any open after the engine failed to start;
+  `seekdb_last_open_error` says why.
+- A new database defaults to `memory_budget=1G`, `vector_memory_limit=128M`,
+  `log_disk_size=2G` and `datafile_maxsize=20G`; parameters override them when the
+  database is created. TCP is not available: a non-zero `port`, or a
+  `mysql_port_mode` other than `disabled`, is rejected.
+- Open returns once the engine runs and its Unix socket sends a MySQL handshake.
+  The connection options carry `transport` `unix_socket`, the socket path in
+  `unix_socket` (a short alias under the App's tmp directory, or under `/tmp` on
+  the Simulator, when the real path is too long) and `user` `root`, with an empty
+  password.
+- The engine sets the process working directory to its data directory and leaves
+  it there, so use absolute paths. The first open blocks until the engine accepts
+  connections; call it away from the UI thread.
+
 ## Tests
 
 `Tests/SeekDBTests` covers public validation, native diagnostics, copied UTF-8
 values, closed-handle access, idempotence, failed-close ownership, deinitialization
-and concurrent options/close, and one test starts the in-process engine. They run
-on an iOS Simulator through `TEST_SIMULATOR`; see the
-[iOS instructions](../ios/README.md).
+and concurrent options/close. `testInProcessEngineKeepsServingAfterClose` starts the
+engine, checks the connection options, reads the MySQL handshake from the socket,
+closes the handle, opens the same directory again and reads the handshake once more,
+and checks that another directory is refused with its diagnostic. The tests run on a
+Simulator through `TEST_SIMULATOR`.
+
+Validated on 2026-10-15 with macOS 27.0, Xcode 27.0, Swift 6.4 and the iOS 27.0
+SDK, against Device and Simulator frameworks built from seekdb `9786f15d9` (branch
+`feature/ios-swift`, 4 exports), with the package reading the framework's own
+header: `build.sh` packaged both and built the package for each with
+`BUILD_SWIFT_PACKAGE=1`, and the 14 tests passed on an iPhone 17 Simulator with
+iOS 27.0, the in-process engine test in 1.0 second (about 14 seconds before, when
+close still stopped the engine). On the same Simulator, a separate Swift package
+that depends on this one by local path opened the engine through the `SeekDB`
+product, read its connection options and closed it, and neither test process
+crashed when it exited with the engine still running. The Device framework was
+built and verified but not run on a device.
