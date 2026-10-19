@@ -1,6 +1,6 @@
 # seekdb-bindings
 
-C library, CLI, and Python, Java, and Swift bindings for [seekdb](https://github.com/oceanbase/seekdb).
+C library, CLI, Python, Java, Android, Node.js, and Swift bindings for [seekdb](https://github.com/oceanbase/seekdb).
 
 Java and Swift expose instance lifecycle and connection information independently
 of the application's SQL client. See [Java bindings](java/README.md) and
@@ -21,8 +21,9 @@ seekdb-bindings/
 │   ├── src/                    library + CLI sources
 │   └── tests/                  gtest cases
 ├── python/                     nanobind module + cibuildwheel config
-├── java/                       Java lifecycle binding
-├── android/                    Android build, AAR packaging, device tests
+├── typescript/                 Node.js lifecycle binding + TypeScript package
+├── java/                       Java lifecycle API and JNI bridge
+├── android/                    Android packaging and examples
 ├── swift/                      Swift lifecycle binding: SwiftPM package, XCFramework packaging
 ├── ios/                        iOS example App
 ├── scripts/                    wheel build, seekdb manylinux build, verify-wheel, etc.
@@ -252,6 +253,13 @@ build/seekdb_cli [db_dir]
 ```
 
 `db_dir` defaults to `./seekdb.db` (created if missing). The seekdb binary is auto-discovered next to `libseekdb`.
+
+## Node.js binding
+
+The TypeScript package provides asynchronous `seekdb.open()`,
+`connectionOptions()`, and `close()` for local instance management. Applications
+use their chosen MySQL-protocol client for SQL. Build and usage instructions are
+in [typescript/README.md](typescript/README.md).
 
 ## Migrate an embedded database
 
