@@ -16,7 +16,7 @@
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 export DEVELOPER_DIR=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}
-seekdb=${SEEKDB_DIR:?Set SEEKDB_DIR to an oceanbase/seekdb checkout built with ./build.sh release --ios [--simulator] --make}
+seekdb=${SEEKDB_DIR:?Set SEEKDB_DIR to an oceanbase/seekdb checkout built with ./build.sh release --ios [--simulator] --framework --make}
 output="$here/build/SeekDBEngine.xcframework"
 derived="$here/.build/xcode"
 
@@ -38,7 +38,7 @@ for slice in "build_ios_release:IOS:iOS" "build_ios_simulator_release:IOSSIMULAT
   destinations+=("generic/platform=$destination")
 done
 if [[ ${#frameworks[@]} -eq 0 ]]; then
-  echo "No SeekDB.framework in $seekdb; run ./build.sh release --ios [--simulator] --make there first" >&2
+  echo "No SeekDB.framework in $seekdb; run ./build.sh release --ios [--simulator] --framework --make there first" >&2
   exit 1
 fi
 mkdir -p "$here/build"

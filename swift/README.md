@@ -60,8 +60,8 @@ the framework in a seekdb checkout, then package it:
 
 ```sh
 cd /path/to/seekdb
-./build.sh release --ios --init --make -j8               # device
-./build.sh release --ios --simulator --init --make -j8   # Simulator
+./build.sh release --ios --framework --init --make -j8               # device
+./build.sh release --ios --simulator --framework --init --make -j8   # Simulator
 cd /path/to/seekdb-bindings
 SEEKDB_DIR=/path/to/seekdb bash swift/build.sh
 ```
